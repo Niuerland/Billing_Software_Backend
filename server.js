@@ -38,7 +38,7 @@ mongoose.connect(mongoURI)
 // Routes
 app.use('/api/bills', billsRoutes);
 app.use('/api/products', adminProductRoutes);
-app.use('/api/stock', stockRoutes);
+app.use('/api', stockRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/companies', companyRoutes);
 app.use('/api/credentials', credentialRoutes);
