@@ -2,18 +2,15 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
-
 const billsRoutes = require('./routes/billsRoutes');
 const adminProductRoutes = require('./routes/adminProductRoutes');
 const stockRoutes = require('./routes/stockRoutes');
 const authRoutes = require('./routes/authRoutes');
 const companyRoutes = require('./routes/companyRoutes');
 const credentialRoutes = require('./routes/credentialRoutes');
-
 const Admin = require('./models/Admin');
-
 const app = express();
-
+const customerRoutes = require('./routes/customerRoutes');
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -42,7 +39,7 @@ app.use('/api', stockRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/companies', companyRoutes);
 app.use('/api/credentials', credentialRoutes);
-
+app.use('/api/customers', customerRoutes);
 // Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {

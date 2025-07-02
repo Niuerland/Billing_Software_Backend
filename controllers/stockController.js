@@ -1,5 +1,5 @@
-const AdminProduct = require('../models/AdminProduct'); // model using adminProductSchema
-const Bill = require('../models/Bill'); // model using bills with items array
+const AdminProduct = require('../models/AdminProduct');
+const Bill = require('../models/Bill');
 
 exports.getStockSummary = async (req, res) => {
   try {
@@ -8,7 +8,7 @@ exports.getStockSummary = async (req, res) => {
 
     const summaryMap = {};
 
-    // Step 1: Initialize map with admin stock
+    // Step 1: Map uploaded stock from admin products
     adminProducts.forEach(prod => {
       summaryMap[prod.productName] = {
         productName: prod.productName,
@@ -20,7 +20,7 @@ exports.getStockSummary = async (req, res) => {
 
     // Step 2: Add sold quantity from bills
     bills.forEach(bill => {
-      bill.items?.forEach(item => {
+      bill.products?.forEach(item => {
         const key = item.name;
         if (!summaryMap[key]) {
           summaryMap[key] = {
@@ -34,10 +34,10 @@ exports.getStockSummary = async (req, res) => {
       });
     });
 
-    // Step 3: Calculate remaining
+    // Step 3: Calculate remaining, clamp at 0
     const result = Object.values(summaryMap).map(item => ({
       ...item,
-      remaining: item.totalUploaded - item.totalSold
+      remaining: Math.max(item.totalUploaded - item.totalSold, 0)
     }));
 
     res.json(result);
