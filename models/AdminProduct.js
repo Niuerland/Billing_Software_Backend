@@ -16,6 +16,7 @@ const adminProductSchema = new mongoose.Schema({
   sgst: Number,
   totalPrice: Number,
   stockQuantity: { type: Number, default: 0 },
+   overallQuantity: Number, 
   quantity: Number,
   discountOnMRP: Number,
   incomingDate: Date,

@@ -13,7 +13,7 @@ exports.getStockSummary = async (req, res) => {
       summaryMap[prod.productName] = {
         productName: prod.productName,
         category: prod.category,
-        totalUploaded: prod.stockQuantity || 0,
+        totalUploaded: prod.overallQuantity || 0,
         totalSold: 0
       };
     });
