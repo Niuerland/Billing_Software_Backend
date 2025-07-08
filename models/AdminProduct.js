@@ -1,28 +1,29 @@
+// models/AdminProduct.js
 const mongoose = require('mongoose');
 
 const adminProductSchema = new mongoose.Schema({
   category: String,
-  productName: String,
-  productCode: { type: String, required: true, unique: true }, // Unique identifier
+  productName: { type: String, required: true },
+  productCode: { type: String, required: true, unique: true },
   brand: String,
   baseUnit: String,
   secondaryUnit: String,
   conversionRate: Number,
-  mrp: Number,
-  discount: Number,
+  mrp: { type: Number, required: true },
+  discount: { type: Number, default: 0 },
   netPrice: Number,
-  gst: Number,
+  gst: { type: Number, required: true },
   sgst: Number,
   totalPrice: Number,
-  stockQuantity: Number, // Product stock
-  quantity: Number, // Not usually needed here, mainly in orders
+  stockQuantity: { type: Number, default: 0 },
+  quantity: Number,
   discountOnMRP: Number,
-  incomingDate: String,
-  expiryDate: String,
+  incomingDate: Date,
+  expiryDate: Date,
   supplierName: String,
   batchNumber: String,
-  manufactureDate: String,
+  manufactureDate: Date,
   manufactureLocation: String
-});
+}, { timestamps: true });
 
-module.exports = mongoose.model('AdminProduct', adminProductSchema, 'adminproducts');
+module.exports = mongoose.model('AdminProduct', adminProductSchema);

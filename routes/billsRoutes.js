@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Bill = require('../models/Bill');
 const StockQuantity = require('../models/StockQuantity');
+const AdminProduct = require('../models/AdminProduct'); // Added missing import
 
 // ✅ GET /api/bills
 router.get('/', async (req, res) => {
@@ -30,7 +31,7 @@ router.post('/', async (req, res) => {
       });
     }
 
-
+    // Check stock availability
     for (const item of billData.products) {
       const stock = await StockQuantity.findOne({ productName: item.name });
       const available = stock?.availableQuantity || 0;
@@ -45,19 +46,26 @@ router.post('/', async (req, res) => {
     const newBill = new Bill(billData);
     const savedBill = await newBill.save();
 
+    // Update stock quantities
     for (const item of billData.products) {
       const stock = await StockQuantity.findOne({ productName: item.name });
 
-      stock.availableQuantity -= item.quantity;
-      stock.sellingQuantity += item.quantity;
-      stock.updatedAt = new Date();
-      await stock.save();
+      if (stock) {
+        stock.availableQuantity -= item.quantity;
+        stock.sellingQuantity += item.quantity;
+        stock.updatedAt = new Date();
+        await stock.save();
+      }
     }
 
     res.status(201).json({ message: 'Bill saved and stock updated', bill: savedBill });
   } catch (error) {
     console.error('Error saving bill:', error);
-    res.status(500).json({ message: 'Server error saving bill', error: error.message });
+    res.status(500).json({ 
+      message: 'Server error saving bill', 
+      error: error.message,
+      stack: error.stack // Include stack trace for debugging
+    });
   }
 });
 
