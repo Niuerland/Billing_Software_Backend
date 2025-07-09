@@ -7,30 +7,33 @@ const StockQuantity = require('../models/StockQuantity'); // <-- Stock model
 // ✅ POST - Add new product and sync stock
 router.post('/', async (req, res) => {
   try {
-    // Calculate overallQuantity before saving
-    const conversionRate = req.body.conversionRate || 1; // Default to 1 if not provided
+    // ✅ Validate GST Category
+    if (!req.body.gstCategory || !['GST', 'Non-GST'].includes(req.body.gstCategory)) {
+      return res.status(400).json({ error: 'GST Category must be either "GST" or "Non-GST"' });
+    }
+
+    // ✅ Calculate overallQuantity before saving
+    const conversionRate = req.body.conversionRate || 1;
     const stockQuantity = req.body.stockQuantity || 0;
     req.body.overallQuantity = stockQuantity * conversionRate;
 
     const product = new AdminProduct(req.body);
     const savedProduct = await product.save();
 
-    // Sync with StockQuantity
+    // ✅ Sync with StockQuantity
     const existingStock = await StockQuantity.findOne({ productCode: savedProduct.productCode });
 
     if (existingStock) {
-      // Update existing stock quantities
-      existingStock.totalQuantity += savedProduct.overallQuantity; // Use overallQuantity here
-      existingStock.availableQuantity += savedProduct.overallQuantity; // And here
+      existingStock.totalQuantity += savedProduct.overallQuantity;
+      existingStock.availableQuantity += savedProduct.overallQuantity;
       existingStock.updatedAt = new Date();
       await existingStock.save();
     } else {
-      // Create new stock record
       const newStock = new StockQuantity({
         productCode: savedProduct.productCode,
         productName: savedProduct.productName,
-        totalQuantity: savedProduct.overallQuantity, // Use overallQuantity
-        availableQuantity: savedProduct.overallQuantity, // And here
+        totalQuantity: savedProduct.overallQuantity,
+        availableQuantity: savedProduct.overallQuantity,
         sellingQuantity: 0,
         updatedAt: new Date()
       });
