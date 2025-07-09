@@ -42,7 +42,16 @@ router.get('/calculate-price/:code', async (req, res) => {
 // ✅ POST - Add new product and sync stock
 router.post('/', async (req, res) => {
   try {
+
     // Initialize conversionRate with a default value of 1 if not provided
+
+    // ✅ Validate GST Category
+    if (!req.body.gstCategory || !['GST', 'Non-GST'].includes(req.body.gstCategory)) {
+      return res.status(400).json({ error: 'GST Category must be either "GST" or "Non-GST"' });
+    }
+
+    // ✅ Calculate overallQuantity before saving
+
     const conversionRate = req.body.conversionRate || 1;
     const stockQuantity = req.body.stockQuantity || 0;
     
@@ -71,7 +80,7 @@ router.post('/', async (req, res) => {
     const product = new AdminProduct(req.body);
     const savedProduct = await product.save();
 
-    // Sync with StockQuantity
+    // ✅ Sync with StockQuantity
     const existingStock = await StockQuantity.findOne({ productCode: savedProduct.productCode });
 
     if (existingStock) {

@@ -12,6 +12,7 @@ const adminProductSchema = new mongoose.Schema({
   sgst: Number,
   totalPrice: Number,
   stockQuantity: { type: Number, default: 0 },
+  gstCategory: { type: String, enum: ['GST', 'Non-GST'], required: true },
   overallQuantity: Number,
   quantity: Number,
   discountOnMRP: Number,
