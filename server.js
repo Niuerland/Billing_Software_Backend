@@ -17,7 +17,7 @@ app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // MongoDB connection
-const mongoURI = 'mongodb+srv://leanderxavier71:Leando17@leander.kkrf4yz.mongodb.net/billingdb?retryWrites=true&w=majority';
+const mongoURI = 'mongodb+srv://Dinakaran:dinakaran@mongodb.4h29m.mongodb.net/billingdb?retryWrites=true&w=majority&appName=Mongodb';
 
 mongoose.connect(mongoURI)
   .then(async () => {

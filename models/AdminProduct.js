@@ -1,4 +1,3 @@
-// models/AdminProduct.js
 const mongoose = require('mongoose');
 
 const adminProductSchema = new mongoose.Schema({
@@ -6,17 +5,14 @@ const adminProductSchema = new mongoose.Schema({
   productName: { type: String, required: true },
   productCode: { type: String, required: true, unique: true },
   brand: String,
-  baseUnit: String,
-  secondaryUnit: String,
-  conversionRate: Number,
-  mrp: { type: Number, required: true },
+  mrp: { type: Number, required: true }, // Display price based on selected unit
   discount: { type: Number, default: 0 },
   netPrice: Number,
   gst: { type: Number, required: true },
   sgst: Number,
   totalPrice: Number,
   stockQuantity: { type: Number, default: 0 },
-   overallQuantity: Number, 
+  overallQuantity: Number,
   quantity: Number,
   discountOnMRP: Number,
   incomingDate: Date,
@@ -24,7 +20,23 @@ const adminProductSchema = new mongoose.Schema({
   supplierName: String,
   batchNumber: String,
   manufactureDate: Date,
-  manufactureLocation: String
+  manufactureLocation: String,
+   baseUnit: { type: String, required: true },
+  secondaryUnit: String,
+  conversionRate: { type: Number, default: 1 },
+  basePrice: Number,
+  secondaryPrice: Number,
+  unitPrices: {
+    piece: Number,
+    box: Number,
+    kg: Number,
+    gram: Number,
+    liter: Number,
+    ml: Number,
+    bag: Number,
+    packet: Number,
+    bottle: Number
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model('AdminProduct', adminProductSchema);

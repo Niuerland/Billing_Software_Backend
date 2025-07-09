@@ -3,14 +3,70 @@ const router = express.Router();
 const AdminProduct = require('../models/AdminProduct');
 const StockQuantity = require('../models/StockQuantity'); // <-- Stock model
 
-// ✅ POST - Add new product and sync stock
+
+router.get('/calculate-price/:code', async (req, res) => {
+  try {
+    const { unit, quantity } = req.query;
+    const product = await AdminProduct.findOne({ productCode: req.params.code });
+
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    let price = 0;
+    
+    // Calculate price based on selected unit
+    if (unit === product.baseUnit) {
+      price = product.basePrice * quantity;
+    } else if (unit === product.secondaryUnit) {
+      price = product.secondaryPrice * quantity;
+    } else if (product.unitPrices[unit]) {
+      price = product.unitPrices[unit] * quantity;
+    } else {
+      // Handle conversions if needed
+      if (unit === 'gram' && product.baseUnit === 'kg') {
+        price = (product.basePrice / 1000) * quantity;
+      } else if (unit === 'ml' && product.baseUnit === 'liter') {
+        price = (product.basePrice / 1000) * quantity;
+      } else {
+        return res.status(400).json({ error: 'Invalid unit conversion' });
+      }
+    }
+
+    res.json({ price: parseFloat(price.toFixed(2)) });
+  } catch (err) {
+    res.status(500).json({ error: 'Error calculating price', details: err.message });
+  }
+});
+
 // ✅ POST - Add new product and sync stock
 router.post('/', async (req, res) => {
   try {
-    // Calculate overallQuantity before saving
-    const conversionRate = req.body.conversionRate || 1; // Default to 1 if not provided
+    // Initialize conversionRate with a default value of 1 if not provided
+    const conversionRate = req.body.conversionRate || 1;
     const stockQuantity = req.body.stockQuantity || 0;
+    
+    // Calculate overallQuantity
     req.body.overallQuantity = stockQuantity * conversionRate;
+
+    // Calculate unit prices
+    const basePrice = req.body.basePrice || req.body.mrp || 0;
+    req.body.unitPrices = {
+      piece: req.body.baseUnit === 'piece' ? basePrice : 0,
+      box: req.body.baseUnit === 'box' ? basePrice : 0,
+      kg: req.body.baseUnit === 'kg' ? basePrice : 0,
+      gram: req.body.baseUnit === 'gram' ? basePrice : (req.body.baseUnit === 'kg' ? basePrice / 1000 : 0),
+      liter: req.body.baseUnit === 'liter' ? basePrice : 0,
+      ml: req.body.baseUnit === 'ml' ? basePrice : (req.body.baseUnit === 'liter' ? basePrice / 1000 : 0),
+      bag: req.body.baseUnit === 'bag' ? basePrice : 0,
+      packet: req.body.baseUnit === 'packet' ? basePrice : 0,
+      bottle: req.body.baseUnit === 'bottle' ? basePrice : 0
+    };
+
+    // Calculate secondary price if secondary unit exists
+    if (req.body.secondaryUnit && conversionRate) {
+      req.body.secondaryPrice = basePrice / conversionRate;
+    }
 
     const product = new AdminProduct(req.body);
     const savedProduct = await product.save();
@@ -19,18 +75,16 @@ router.post('/', async (req, res) => {
     const existingStock = await StockQuantity.findOne({ productCode: savedProduct.productCode });
 
     if (existingStock) {
-      // Update existing stock quantities
-      existingStock.totalQuantity += savedProduct.overallQuantity; // Use overallQuantity here
-      existingStock.availableQuantity += savedProduct.overallQuantity; // And here
+      existingStock.totalQuantity += savedProduct.overallQuantity;
+      existingStock.availableQuantity += savedProduct.overallQuantity;
       existingStock.updatedAt = new Date();
       await existingStock.save();
     } else {
-      // Create new stock record
       const newStock = new StockQuantity({
         productCode: savedProduct.productCode,
         productName: savedProduct.productName,
-        totalQuantity: savedProduct.overallQuantity, // Use overallQuantity
-        availableQuantity: savedProduct.overallQuantity, // And here
+        totalQuantity: savedProduct.overallQuantity,
+        availableQuantity: savedProduct.overallQuantity,
         sellingQuantity: 0,
         updatedAt: new Date()
       });
@@ -40,7 +94,11 @@ router.post('/', async (req, res) => {
     res.status(201).json(savedProduct);
   } catch (err) {
     console.error('❌ Error saving product and syncing stock:', err);
-    res.status(500).json({ error: 'Failed to save product', details: err.message });
+    res.status(500).json({ 
+      error: 'Failed to save product', 
+      details: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 });
 
@@ -106,5 +164,7 @@ router.patch('/reduce-stock/:code', async (req, res) => {
     res.status(500).json({ error: 'Failed to update stock', details: err.message });
   }
 });
+
+
 
 module.exports = router;
