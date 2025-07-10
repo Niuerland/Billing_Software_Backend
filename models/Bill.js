@@ -5,8 +5,21 @@ const billSchema = new mongoose.Schema({
   customer: {
     id: { type: String, required: true },
     name: { type: String, required: true },
-    contact: { type: String, required: true }
-  },
+    contact: { type: String, required: true },
+    aadhaar: {
+      type: String,
+      trim: true,
+      validate: {
+        validator: function (v) {
+          // Validate 12 digits (after removing non-digits)
+          const digits = v.replace(/\D/g, '');
+          return digits.length === 0 || digits.length === 12;
+        },
+        message: 'Aadhaar must be 12 digits'
+      }
+    },
+    location: { type: String, trim: true }
+},
   products: [{
     name: { type: String, required: true },
     price: { type: Number, required: true },
@@ -21,10 +34,10 @@ const billSchema = new mongoose.Schema({
   date: { type: Date, default: Date.now },
   billNumber: { type: String, required: true, unique: true },
   payment: {
-    method: { type: String },
-    amountPaid: { type: Number },
-    transactionId: String
-  }
+  method: { type: String },
+  amountPaid: { type: Number },
+  transactionId: String
+}
 }, { timestamps: true });
 
 module.exports = mongoose.model('Bill', billSchema);
