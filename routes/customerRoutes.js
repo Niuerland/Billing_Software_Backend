@@ -6,6 +6,12 @@ async function getNextCustomerId() {
   const lastCustomer = await Customer.findOne().sort({ id: -1 });
   return lastCustomer ? lastCustomer.id + 1 : 1000;
 }
+function formatAadhaar(aadhaar) {
+  if (!aadhaar) return '';
+  const digits = aadhaar.replace(/\D/g, '');
+  if (digits.length !== 12) return aadhaar; // Return as-is if invalid
+  return `${digits.slice(0, 4)}-${digits.slice(4, 8)}-${digits.slice(8)}`;
+}
 
 // POST /api/customers - Create new customer
 router.post('/', async (req, res) => {
@@ -20,28 +26,28 @@ router.post('/', async (req, res) => {
     // Check if contact already exists
     const existingByContact = await Customer.findOne({ contact });
     if (existingByContact) {
-      return res.status(409).json({ 
-        message: 'Customer with this contact already exists', 
-        customer: existingByContact 
+      return res.status(409).json({
+        message: 'Customer with this contact already exists',
+        customer: existingByContact
       });
     }
 
     // Check if Aadhaar already exists (if provided)
     if (aadhaar) {
-      const existingByAadhaar = await Customer.findOne({ 
-        aadhaar: aadhaar.replace(/\D/g, '') 
+      const existingByAadhaar = await Customer.findOne({
+        aadhaar: aadhaar.replace(/\D/g, '')
       });
       if (existingByAadhaar) {
-        return res.status(409).json({ 
-          message: 'Customer with this Aadhaar already exists', 
-          customer: existingByAadhaar 
+        return res.status(409).json({
+          message: 'Customer with this Aadhaar already exists',
+          customer: existingByAadhaar
         });
       }
     }
 
     // Create new customer
     const id = await getNextCustomerId();
-    const customer = new Customer({ 
+    const customer = new Customer({
       id,
       name,
       contact,
@@ -61,14 +67,14 @@ router.post('/', async (req, res) => {
 
   } catch (err) {
     console.error('❌ Error creating customer:', err);
-    
+
     if (err.name === 'ValidationError') {
-      return res.status(400).json({ 
-        message: 'Validation error', 
-        errors: err.errors 
+      return res.status(400).json({
+        message: 'Validation error',
+        errors: err.errors
       });
     }
-    
+
     res.status(500).json({ message: 'Server error' });
   }
 });
@@ -79,8 +85,8 @@ router.get('/', async (req, res) => {
     const { contact, aadhaar } = req.query;
 
     if (!contact && !aadhaar) {
-      return res.status(400).json({ 
-        message: 'Contact or Aadhaar number is required' 
+      return res.status(400).json({
+        message: 'Contact or Aadhaar number is required'
       });
     }
 
