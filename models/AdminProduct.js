@@ -5,9 +5,12 @@ const adminProductSchema = new mongoose.Schema({
   productName: { type: String, required: true },
   productCode: { type: String, required: true, unique: true },
   brand: String,
-  mrp: { type: Number, required: true },
+  mrp: { type: Number},
+  sellerPrice: { type: Number, required: true },  // Price at which you bought
+  profit: { type: Number, required: true },       // Calculated profit (MRP - SellerPrice)
   discount: { type: Number, default: 0 },
   netPrice: Number,
+  mrpPrice: Number,
   gst: { type: Number, required: true },
   sgst: Number,
   totalPrice: Number,

@@ -111,16 +111,31 @@ router.post('/', async (req, res) => {
   }
 });
 
-// ✅ GET - All products
+// In your products route file
 router.get('/', async (req, res) => {
-  try {
-    const products = await AdminProduct.find();
-    res.json(products);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to load products' });
-  }
+    try {
+        const products = await AdminProduct.find().sort({ createdAt: -1 });
+        res.json(products);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
 });
 
+// Add this if you want a profit summary endpoint
+router.get('/profit-summary', async (req, res) => {
+    try {
+        const products = await AdminProduct.find();
+        const totalProfit = products.reduce((sum, product) => sum + product.profit, 0);
+        
+        res.json({
+            totalProducts: products.length,
+            totalProfit,
+            averageProfit: totalProfit / products.length
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+});
 // ✅ GET - Product by productCode (for auto-fill)
 router.get('/code/:code', async (req, res) => {
   try {
