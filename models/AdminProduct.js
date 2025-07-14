@@ -5,7 +5,7 @@ const adminProductSchema = new mongoose.Schema({
   productName: { type: String, required: true },
   productCode: { type: String, required: true, unique: true },
   brand: String,
-  mrp: { type: Number, required: true }, // Display price based on selected unit
+  mrp: { type: Number, required: true },
   discount: { type: Number, default: 0 },
   netPrice: Number,
   gst: { type: Number, required: true },
@@ -22,7 +22,7 @@ const adminProductSchema = new mongoose.Schema({
   batchNumber: String,
   manufactureDate: Date,
   manufactureLocation: String,
-   baseUnit: { type: String, required: true },
+  baseUnit: { type: String, required: true },
   secondaryUnit: String,
   conversionRate: { type: Number, default: 1 },
   basePrice: Number,
@@ -37,7 +37,15 @@ const adminProductSchema = new mongoose.Schema({
     bag: Number,
     packet: Number,
     bottle: Number
-  },
+  }
 }, { timestamps: true });
+
+adminProductSchema.pre('save', function(next) {
+  // Calculate overall quantity whenever stockQuantity or conversionRate changes
+  if (this.isModified('stockQuantity') || this.isModified('conversionRate')) {
+    this.overallQuantity = this.stockQuantity * (this.conversionRate || 1);
+  }
+  next();
+});
 
 module.exports = mongoose.model('AdminProduct', adminProductSchema);

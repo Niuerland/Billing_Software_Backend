@@ -11,7 +11,6 @@ const billSchema = new mongoose.Schema({
       trim: true,
       validate: {
         validator: function (v) {
-          // Validate 12 digits (after removing non-digits)
           const digits = v.replace(/\D/g, '');
           return digits.length === 0 || digits.length === 12;
         },
@@ -19,11 +18,12 @@ const billSchema = new mongoose.Schema({
       }
     },
     location: { type: String, trim: true }
-},
+  },
   products: [{
     name: { type: String, required: true },
     price: { type: Number, required: true },
     quantity: { type: Number, required: true },
+    unit: { type: String, required: true }, // Added unit field
     gst: { type: Number, required: true },
     mrp: { type: Number, required: true },
     discount: { type: Number, default: 0 }
@@ -34,10 +34,10 @@ const billSchema = new mongoose.Schema({
   date: { type: Date, default: Date.now },
   billNumber: { type: String, required: true, unique: true },
   payment: {
-  method: { type: String },
-  amountPaid: { type: Number },
-  transactionId: String
-}
+    method: { type: String },
+    amountPaid: { type: Number },
+    transactionId: String
+  }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Bill', billSchema);
