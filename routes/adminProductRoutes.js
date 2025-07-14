@@ -84,16 +84,16 @@ router.post('/', async (req, res) => {
     const existingStock = await StockQuantity.findOne({ productCode: savedProduct.productCode });
 
     if (existingStock) {
-      existingStock.totalQuantity += savedProduct.overallQuantity;
-      existingStock.availableQuantity += savedProduct.overallQuantity;
+      existingStock.totalQuantity += savedProduct.stockQuantity;
+      existingStock.availableQuantity += savedProduct.stockQuantity;
       existingStock.updatedAt = new Date();
       await existingStock.save();
     } else {
       const newStock = new StockQuantity({
         productCode: savedProduct.productCode,
         productName: savedProduct.productName,
-        totalQuantity: savedProduct.overallQuantity,
-        availableQuantity: savedProduct.overallQuantity,
+        totalQuantity: savedProduct.stockQuantity,
+        availableQuantity: savedProduct.stockQuantity,
         sellingQuantity: 0,
         updatedAt: new Date()
       });
