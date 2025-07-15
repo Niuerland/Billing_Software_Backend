@@ -25,7 +25,8 @@ const billSchema = new mongoose.Schema({
     quantity: { type: Number, required: true },
     unit: { type: String, required: true }, // Added unit field
     gst: { type: Number, required: true },
-    mrp: { type: Number, required: true },
+    mrp: { type: Number},
+    mrpPrice: { type: Number },
     discount: { type: Number, default: 0 }
   }],
   subtotal: { type: Number, required: true },
