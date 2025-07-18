@@ -3,7 +3,7 @@ const mongoose = require('mongoose'); // Add this line
 const router = express.Router();
 const AdminProduct = require('../models/AdminProduct');
 const StockQuantity = require('../models/StockQuantity');
-const StockHistory = require('../models/StockHistory'); // Corrected import (was using Product before)
+const StockHistory = require('../models/StockHistory'); 
 
 router.get('/calculate-price/:code', async (req, res) => {
   try {
@@ -253,5 +253,121 @@ router.put('/stock/:productCode', async (req, res) => {  // Changed from :id to 
         });
     }
 });
+
+
+router.get('/stock-history', async (req, res) => {
+    try {
+        // Optional query parameters for filtering
+        const { productCode, startDate, endDate } = req.query;
+        
+        let query = {};
+        
+        if (productCode) {
+            query.productCode = productCode;
+        }
+        
+        if (startDate || endDate) {
+            query.createdAt = {};
+            if (startDate) query.createdAt.$gte = new Date(startDate);
+            if (endDate) query.createdAt.$lte = new Date(endDate);
+        }
+        
+        const history = await StockHistory.find(query)
+            .sort({ createdAt: -1 }) // Sort by most recent first
+            .lean(); // Convert to plain JS objects
+        
+        res.json(history);
+    } catch (err) {
+        console.error('Error fetching stock history:', err);
+        res.status(500).json({ error: 'Server error while fetching stock history' });
+    }
+});
+
+// Get seller expenses grouped by supplier and batch
+router.get('/seller-expenses', async (req, res) => {
+    try {
+        const { startDate, endDate, supplierName } = req.query;
+        
+        const matchStage = {
+            supplierName: { $exists: true, $ne: '' },
+            batchNumber: { $exists: true, $ne: '' }
+        };
+        
+        // Add date filtering if provided
+        if (startDate || endDate) {
+            matchStage.createdAt = {};
+            if (startDate) matchStage.createdAt.$gte = new Date(startDate);
+            if (endDate) matchStage.createdAt.$lte = new Date(endDate);
+        }
+        
+        // Add supplier filtering if provided
+        if (supplierName) {
+            matchStage.supplierName = new RegExp(supplierName, 'i');
+        }
+        
+        const pipeline = [
+            { $match: matchStage },
+            {
+                $group: {
+                    _id: {
+                        supplierName: "$supplierName",
+                        batchNumber: "$batchNumber",
+                        gstCategory: "$gstCategory"
+                    },
+                    products: {
+                        $push: {
+                            _id: "$_id",
+                            productName: "$productName",
+                            productCode: "$productCode",
+                            category: "$category",
+                            baseUnit: "$baseUnit",
+                            addedStock: "$stockQuantity",
+                            sellerPrice: "$sellerPrice",
+                            mrp: "$mrp",
+                            manufactureDate: "$manufactureDate",
+                            expiryDate: "$expiryDate",
+                            createdAt: "$createdAt"
+                        }
+                    },
+                    totalAmount: {
+                        $sum: { $multiply: ["$stockQuantity", "$sellerPrice"] }
+                    },
+                    totalProfit: {
+                        $sum: {
+                            $multiply: [
+                                "$stockQuantity",
+                                { $subtract: ["$mrp", "$sellerPrice"] }
+                            ]
+                        }
+                    }
+                }
+            },
+            {
+                $project: {
+                    _id: 0,
+                    supplierName: "$_id.supplierName",
+                    batchNumber: "$_id.batchNumber",
+                    gstCategory: "$_id.gstCategory",
+                    products: 1,
+                    totalAmount: 1,
+                    totalProfit: 1
+                }
+            },
+            { $sort: { supplierName: 1, batchNumber: 1 } }
+        ];
+        
+        const sellerExpenses = await AdminProduct.aggregate(pipeline);
+        
+        res.json(sellerExpenses);
+    } catch (err) {
+        console.error('Error fetching seller expenses:', err);
+        res.status(500).json({ 
+            error: 'Failed to fetch seller expenses',
+            details: err.message,
+            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        });
+    }
+});
+
 
 module.exports = router;
