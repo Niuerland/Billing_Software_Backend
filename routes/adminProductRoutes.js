@@ -133,6 +133,51 @@ router.get('/code/:code', async (req, res) => {
   }
 });
 
+// Add this new route to your existing product routes file
+router.get('/name/:name', async (req, res) => {
+  try {
+    // Case-insensitive search for product name
+    const product = await AdminProduct.findOne({ 
+      productName: { $regex: new RegExp(req.params.name, 'i') } 
+    });
+    
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+    
+    res.json(product);
+  } catch (err) {
+    res.status(500).json({ 
+      error: 'Error fetching product by name',
+      details: err.message 
+    });
+  }
+});
+
+// Add this search endpoint that searches by both code and name
+router.get('/search', async (req, res) => {
+  try {
+    const query = req.query.query;
+    
+    if (!query || query.length < 2) {
+      return res.status(400).json({ error: 'Search query must be at least 2 characters' });
+    }
+    
+    const products = await AdminProduct.find({
+      $or: [
+        { productCode: { $regex: query, $options: 'i' } },
+        { productName: { $regex: query, $options: 'i' } }
+      ]
+    }).limit(10); // Limit to 10 results
+    
+    res.json(products);
+  } catch (err) {
+    res.status(500).json({ 
+      error: 'Error searching products',
+      details: err.message 
+    });
+  }
+});
 router.patch('/reduce-stock/:code', async (req, res) => {
   const { quantity } = req.body;
 
