@@ -14,10 +14,12 @@ router.get('/unpaid', async (req, res) => {
             return res.status(400).json({ message: 'Customer ID is required' });
         }
 
+        // Find bills for the customer where 'unpaidAmountForThisBill' is greater than 0
+        // This ensures only truly outstanding bills are returned.
         const unpaidBills = await Bill.find({
             'customer.id': parseInt(customerId),
             unpaidAmountForThisBill: { $gt: 0 }
-        }).sort({ createdAt: 1 });
+        }).sort({ createdAt: 1 }); // Sort by creation date to get oldest first
 
         res.status(200).json(unpaidBills);
     } catch (err) {
@@ -27,51 +29,53 @@ router.get('/unpaid', async (req, res) => {
 });
 
 // --- NEW DEDICATED ENDPOINT FOR SETTLING OUTSTANDING BILLS ---
+// This endpoint is used when a customer makes a payment specifically towards their
+// existing outstanding bills, independent of a new purchase.
 router.post('/settle-outstanding', async (req, res) => {
     try {
         const {
             customerId, // Needed to update customer's total outstanding credit
             paymentMethod,
             transactionId,
-            amountPaid, // Total amount paid for outstanding bills
+            amountPaid, // Total amount paid for outstanding bills in this transaction
             selectedUnpaidBillIds // Array of bill _ids to be updated
         } = req.body;
 
+        // Validate required input fields
         if (!customerId || !paymentMethod || typeof amountPaid === 'undefined' || !Array.isArray(selectedUnpaidBillIds) || selectedUnpaidBillIds.length === 0) {
             return res.status(400).json({ message: 'Missing required payment details or selected bills.' });
         }
 
-        let remainingPaymentToDistribute = amountPaid;
-        const updatedBills = [];
+        let remainingPaymentToDistribute = amountPaid; // Amount left to apply to bills
+        const updatedBills = []; // To store the bills that were successfully updated
 
-        // Fetch selected bills, ensure they are still outstanding
+        // Fetch selected bills that are still outstanding, sorted by date to prioritize older debts
         const billsToUpdate = await Bill.find({
             _id: { $in: selectedUnpaidBillIds },
-            unpaidAmountForThisBill: { $gt: 0 }
-        }).sort({ date: 1 }); // Sort by date to apply payment to oldest bills first
+            unpaidAmountForThisBill: { $gt: 0 } // Ensure they are genuinely unpaid
+        }).sort({ date: 1 });
 
         if (billsToUpdate.length === 0) {
             return res.status(404).json({ message: 'No valid outstanding bills found for settlement.' });
         }
 
+        // Iterate through the selected bills and apply the payment
         for (const bill of billsToUpdate) {
-            if (remainingPaymentToDistribute <= 0) break; // No more money to distribute
+            if (remainingPaymentToDistribute <= 0) break; // Stop if no more payment to distribute
 
-            const unpaidAmount = bill.unpaidAmountForThisBill;
+            const unpaidAmount = bill.unpaidAmountForThisBill; // Current unpaid amount for THIS specific bill
 
             if (remainingPaymentToDistribute >= unpaidAmount) {
-                // Fully pay off this bill
-                bill.paidAmount += unpaidAmount;
-                bill.unpaidAmountForThisBill = 0;
-                bill.status = 'paid';
-                // bill.creditPaid = true; // Optional: if you want to flag these specifically as credit payments
-                remainingPaymentToDistribute -= unpaidAmount;
+                // If the remaining payment covers this bill's unpaid amount, fully pay it off
+                bill.paidAmount += unpaidAmount; // Add the full unpaid amount to the bill's paid total
+                bill.unpaidAmountForThisBill = 0; // Set unpaid amount for THIS bill to zero
+                bill.status = 'paid'; // Mark THIS bill as fully paid
+                remainingPaymentToDistribute -= unpaidAmount; // Reduce the payment amount remaining
             } else {
-                // Partially pay this bill
-                bill.paidAmount += remainingPaymentToDistribute;
-                bill.unpaidAmountForThisBill -= remainingPaymentToDistribute;
-                bill.status = 'partial';
-                // bill.creditPaid = false; // Or handle as needed
+                // If the remaining payment is less than this bill's unpaid amount, partially pay it
+                bill.paidAmount += remainingPaymentToDistribute; // Add the remaining payment to the bill's paid total
+                bill.unpaidAmountForThisBill -= remainingPaymentToDistribute; // Reduce unpaid amount for THIS bill
+                bill.status = 'partial'; // Mark THIS bill as partially paid
                 remainingPaymentToDistribute = 0; // All payment distributed
             }
 
@@ -79,20 +83,21 @@ router.post('/settle-outstanding', async (req, res) => {
             if (transactionId) {
                 bill.transactionId = transactionId; // Update transaction ID
             }
-            updatedBills.push(await bill.save()); // Save the updated bill
+            updatedBills.push(await bill.save()); // Save the updated bill document
         }
 
-        // Update customer's outstanding credit based on the *actual* amount paid towards their old bills
+        // Update customer's total outstanding credit after these payments
         const customerRecord = await Customer.findOne({ id: customerId });
         if (customerRecord) {
-            // Recalculate customer's total outstanding after these payments
+            // Recalculate customer's total outstanding by summing 'unpaidAmountForThisBill'
+            // across all their bills that still have an outstanding balance.
             const remainingOutstanding = await Bill.aggregate([
                 { $match: { 'customer.id': parseInt(customerId), unpaidAmountForThisBill: { $gt: 0 } } },
                 { $group: { _id: null, totalUnpaid: { $sum: '$unpaidAmountForThisBill' } } }
             ]);
 
             customerRecord.outstandingCredit = remainingOutstanding.length > 0 ? remainingOutstanding[0].totalUnpaid : 0;
-            await customerRecord.save();
+            await customerRecord.save(); // Save the updated customer record
         }
 
         res.status(200).json({
@@ -116,15 +121,18 @@ router.post('/', async (req, res) => {
             products,
             productSubtotal,
             productGst,
-            currentBillTotal,
-            previousOutstandingCredit,
-            grandTotal, // This grandTotal is for the current new bill transaction only
-            payment, // This payment contains currentBillPayment and selectedOutstandingPayment
-            billNumber, // This is the new bill number
-            selectedUnpaidBillIds = [] // IDs of outstanding bills to settle
+            // currentBillTotal, // This field is now redundant as grandTotal is derived
+            previousOutstandingCredit, // This is just for informational purposes or customer display
+            payment,
+            billNumber,
+            selectedUnpaidBillIds = []
         } = billData;
 
-        if (!customer || typeof customer.id === 'undefined' || typeof grandTotal === 'undefined' || !payment || typeof payment.amountPaid === 'undefined') {
+        // Calculate the grandTotal for the CURRENT new bill based ONLY on its products and GST.
+        // This ensures 'grandTotal' strictly represents the value of the current purchase.
+        const grandTotalForCurrentBill = (productSubtotal || 0) + (productGst || 0);
+
+        if (!customer || typeof customer.id === 'undefined' || !payment || typeof payment.amountPaid === 'undefined') {
             return res.status(400).json({ message: 'Required fields missing for new bill creation.' });
         }
 
@@ -149,7 +157,7 @@ router.post('/', async (req, res) => {
                 } else if (item.unit === product.secondaryUnit) {
                     requestedInBaseUnits = item.quantity / (product.conversionRate || 1);
                 } else {
-                    requestedInBaseUnits = item.quantity; // Fallback, consider if this case is valid
+                    requestedInBaseUnits = item.quantity;
                 }
 
                 if (requestedInBaseUnits > availableInBaseUnits) {
@@ -163,8 +171,9 @@ router.post('/', async (req, res) => {
         }
 
         // --- Process current new bill payment ---
-        let newBillCalculatedUnpaid = grandTotal - payment.currentBillPayment; // grandTotal here is for the new bill
-        if (newBillCalculatedUnpaid < 0) newBillCalculatedUnpaid = 0; // No negative unpaid
+        // 'payment.currentBillPayment' is the amount specifically paid towards THIS new bill.
+        let newBillCalculatedUnpaid = grandTotalForCurrentBill - payment.currentBillPayment;
+        if (newBillCalculatedUnpaid < 0) newBillCalculatedUnpaid = 0;
 
         let newBillStatus = newBillCalculatedUnpaid > 0 ? (payment.currentBillPayment > 0 ? 'partial' : 'unpaid') : 'paid';
 
@@ -179,10 +188,10 @@ router.post('/', async (req, res) => {
             products,
             productSubtotal,
             productGst,
-            currentBillTotal, // This is the total of the items in the current purchase
-            previousOutstandingCredit, // This might be used if customer has general credit, or can be removed if specific bills are managed
-            grandTotal, // Total for the current bill including taxes etc.
-            paidAmount: payment.currentBillPayment, // Only the portion paid for this new bill
+            currentBillTotal: grandTotalForCurrentBill, // Use the calculated grandTotal for currentBillTotal
+            previousOutstandingCredit, // This remains as informational, not part of current bill's grandTotal
+            grandTotal: grandTotalForCurrentBill, // Store the calculated grandTotal for THIS bill
+            paidAmount: payment.currentBillPayment,
             unpaidAmountForThisBill: newBillCalculatedUnpaid,
             status: newBillStatus,
             billNumber,
@@ -198,7 +207,7 @@ router.post('/', async (req, res) => {
                 const product = await AdminProduct.findOne({ productName: item.name });
                 const stock = await StockQuantity.findOne({ productCode: product.productCode });
 
-                if (stock && product) { // Ensure product is found
+                if (stock && product) {
                     const conversionRate = product.conversionRate || 1;
                     const qtyInBase = item.unit === product.baseUnit
                         ? item.quantity
@@ -219,7 +228,7 @@ router.post('/', async (req, res) => {
             const billsToSettle = await Bill.find({
                 _id: { $in: selectedUnpaidBillIds },
                 unpaidAmountForThisBill: { $gt: 0 }
-            }).sort({ date: 1 }); // Important: Settle oldest first
+            }).sort({ date: 1 });
 
             for (const bill of billsToSettle) {
                 if (outstandingPaymentRemaining <= 0) break;
@@ -230,16 +239,13 @@ router.post('/', async (req, res) => {
                     bill.paidAmount += unpaid;
                     bill.unpaidAmountForThisBill = 0;
                     bill.status = 'paid';
-                    // bill.creditPaid = true; // Flag as paid via credit/settlement
                     outstandingPaymentRemaining -= unpaid;
                 } else {
                     bill.paidAmount += outstandingPaymentRemaining;
                     bill.unpaidAmountForThisBill -= outstandingPaymentRemaining;
                     bill.status = 'partial';
-                    // bill.creditPaid = false;
                     outstandingPaymentRemaining = 0;
                 }
-                // Update payment method and transaction ID for the specific payment on this bill
                 bill.paymentMethod = payment.method;
                 if (payment.transactionId) {
                     bill.transactionId = payment.transactionId;
