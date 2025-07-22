@@ -415,4 +415,48 @@ router.get('/seller-expenses', async (req, res) => {
 });
 
 
+router.delete('/:id', async (req, res) => {
+  try {
+    const productId = req.params.id;
+    
+    // First find the product to get its code
+    const product = await AdminProduct.findById(productId);
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+
+    // Delete the product
+    await AdminProduct.findByIdAndDelete(productId);
+    
+    // Also delete the corresponding stock quantity record
+    await StockQuantity.findOneAndDelete({ productCode: product.productCode });
+    
+    // Add a record to stock history for audit purposes
+    const stockHistory = new StockHistory({
+      productId: product._id,
+      productCode: product.productCode,
+      productName: product.productName,
+      action: 'DELETE',
+      previousStock: product.stockQuantity,
+      addedStock: 0,
+      newStock: 0,
+      updatedBy: req.user?.id || 'system',
+      notes: 'Product deleted from system'
+    });
+    await stockHistory.save();
+
+    res.json({ 
+      success: true,
+      message: 'Product and associated stock records deleted successfully'
+    });
+  } catch (err) {
+    console.error('Error deleting product:', err);
+    res.status(500).json({ 
+      error: 'Failed to delete product',
+      details: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+});
+
 module.exports = router;
