@@ -14,7 +14,8 @@
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
     "mongoose": "^8.16.0",
-    "multer": "^2.0.1"
+    "multer": "^2.0.1",
+    "pm2-windows-startup": "^1.0.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
