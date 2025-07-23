@@ -6,27 +6,72 @@ const StockQuantity = require('../models/StockQuantity');
 const AdminProduct = require('../models/AdminProduct');
 const Customer = require('../models/Customer');
 
-// Get unpaid bills for a customer (filtered to exclude already settled ones)
-router.get('/unpaid', async (req, res) => {
-    try {
-        const { customerId } = req.query;
-        if (!customerId) {
-            return res.status(400).json({ message: 'Customer ID is required' });
-        }
+router.get('/', async (req, res) => {
+  try {
+    const { customerId, unpaidOnly } = req.query;
 
-        // Find bills for the customer where 'unpaidAmountForThisBill' is greater than 0
-        // This ensures only truly outstanding bills are returned.
-        const unpaidBills = await Bill.find({
-            'customer.id': parseInt(customerId),
-            unpaidAmountForThisBill: { $gt: 0 }
-        }).sort({ createdAt: 1 }); // Sort by creation date to get oldest first
-
-        res.status(200).json(unpaidBills);
-    } catch (err) {
-        console.error('Error fetching unpaid bills:', err);
-        res.status(500).json({ message: 'Failed to fetch unpaid bills' });
+    // Validate customerId if provided
+    if (customerId && isNaN(parseInt(customerId))) {
+      return res.status(400).json({ message: 'Customer ID must be a number' });
     }
+
+    // If customerId is provided with unpaidOnly=true
+    if (customerId && unpaidOnly === 'true') {
+      const unpaidBills = await Bill.find({
+        'customer.id': parseInt(customerId),
+        unpaidAmountForThisBill: { $gt: 0 }
+      }).sort({ createdAt: 1 }).lean();
+
+      // Ensure all bills have required fields
+      const validatedBills = unpaidBills.map(bill => ({
+        ...bill,
+        customer: {
+          id: bill.customer?.id || 0,
+          name: bill.customer?.name || 'Unknown',
+          contact: bill.customer?.contact || 'Not provided'
+        },
+        products: bill.products?.map(p => ({
+          name: p.name || 'Unnamed product',
+          price: p.price || 0,
+          quantity: p.quantity || 0
+        })) || [],
+        total: bill.total || 0,
+        unpaidAmountForThisBill: bill.unpaidAmountForThisBill || 0
+      }));
+
+      return res.status(200).json(validatedBills);
+    }
+
+    // If no specific query parameters, return all bills
+    const bills = await Bill.find().lean();
+    res.status(200).json(bills);
+  } catch (err) {
+    console.error('Error fetching bills:', err);
+    res.status(500).json({ message: 'Failed to fetch bills', error: err.message });
+  }
 });
+
+// Keep the separate unpaid endpoint for backward compatibility
+router.get('/unpaid', async (req, res) => {
+  try {
+    const { customerId } = req.query;
+    if (!customerId) {
+      return res.status(400).json({ message: 'Customer ID is required' });
+    }
+
+    // Find bills for the customer where 'unpaidAmountForThisBill' is greater than 0
+    const unpaidBills = await Bill.find({
+      'customer.id': parseInt(customerId),
+      unpaidAmountForThisBill: { $gt: 0 }
+    }).sort({ createdAt: 1 });
+
+    res.status(200).json(unpaidBills);
+  } catch (err) {
+    console.error('Error fetching unpaid bills:', err);
+    res.status(500).json({ message: 'Failed to fetch unpaid bills' });
+  }
+});
+
 
 // --- NEW DEDICATED ENDPOINT FOR SETTLING OUTSTANDING BILLS ---
 // This endpoint is used when a customer makes a payment specifically towards their

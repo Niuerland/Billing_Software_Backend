@@ -30,9 +30,7 @@ const billSchema = new mongoose.Schema({
     discount: { type: Number, default: 0 }
   }],
 
-  productSubtotal: { type: Number, required: true },
-
-  productGst: { type: Number, required: true },
+  productSubtotal: { type: Number },
 
   currentBillTotal: { type: Number, required: true },
 
