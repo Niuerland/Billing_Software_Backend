@@ -413,8 +413,8 @@ router.get('/seller-expenses', async (req, res) => {
                 $group: {
                     _id: {
                         supplierName: "$supplierName",
-                        batchNumber: "$batchNumber",
-                        gstCategory: "$gstCategory"
+                        batchNumber: "$batchNumber"
+                        // Removed gstCategory from grouping
                     },
                     products: {
                         $push: {
@@ -449,7 +449,7 @@ router.get('/seller-expenses', async (req, res) => {
                     _id: 0,
                     supplierName: "$_id.supplierName",
                     batchNumber: "$_id.batchNumber",
-                    gstCategory: "$_id.gstCategory",
+                    // Removed gstCategory from projection as well
                     products: 1,
                     totalAmount: 1,
                     totalProfit: 1
@@ -469,6 +469,38 @@ router.get('/seller-expenses', async (req, res) => {
             stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
         });
     }
+});
+
+// Add this to your productRoutes.js
+router.get('/seller-info', async (req, res) => {
+  try {
+    const { supplierName, batchNumber } = req.query;
+    
+    if (!supplierName || !batchNumber) {
+      return res.status(400).json({ error: 'Supplier name and batch number are required' });
+    }
+
+    const product = await AdminProduct.findOne({ 
+      supplierName: new RegExp(supplierName, 'i'),
+      batchNumber: new RegExp(batchNumber, 'i')
+    }).select('supplierName batchNumber _id').lean();
+
+    if (!product) {
+      return res.status(404).json({ error: 'No products found for this supplier and batch' });
+    }
+
+    res.json({
+      sellerId: product._id,
+      supplierName: product.supplierName,
+      batchNumber: product.batchNumber
+    });
+  } catch (err) {
+    console.error('Error fetching seller info:', err);
+    res.status(500).json({ 
+      error: 'Failed to fetch seller info',
+      details: err.message
+    });
+  }
 });
 
 
