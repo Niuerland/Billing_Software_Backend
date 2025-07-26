@@ -1,4 +1,3 @@
-// models/Bill.js
 const mongoose = require('mongoose');
 
 const billSchema = new mongoose.Schema({
@@ -27,19 +26,16 @@ const billSchema = new mongoose.Schema({
     gst: { type: Number },
     mrp: { type: Number },
     mrpPrice: { type: Number },
-    discount: { type: Number, default: 0 }
+    discount: { type: Number, default: 0 },
+    hsnCode: { type: String } // Added HSN Code field
   }],
 
   productSubtotal: { type: Number },
-
+  transportCharge: { type: Number, default: 0 }, // Added transport charge field
   currentBillTotal: { type: Number, required: true },
-
   previousOutstandingCredit: { type: Number, default: 0 },
-
   grandTotal: { type: Number, required: true },
-
   paidAmount: { type: Number, default: 0 },
-
   unpaidAmountForThisBill: { type: Number, default: 0 },
   creditPaid: { type: Boolean, default: false },
   status: { type: String, enum: ['paid', 'partial', 'unpaid'], default: 'unpaid' },
