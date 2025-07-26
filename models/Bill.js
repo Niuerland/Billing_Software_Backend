@@ -18,6 +18,12 @@ const billSchema = new mongoose.Schema({
     },
     location: { type: String, trim: true }
   },
+  cashier: {
+    cashierId: { type: String, required: true },
+    cashierName: { type: String, required: true },
+    counterNum: { type: String, required: true },
+    contactNumber: { type: String }
+  },
   products: [{
     name: { type: String, required: true },
     price: { type: Number, required: true },
