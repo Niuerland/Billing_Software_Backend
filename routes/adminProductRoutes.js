@@ -216,87 +216,144 @@ router.patch('/reduce-stock/:code', async (req, res) => {
   }
 });
 
-router.put('/stock/:productCode', async (req, res) => {  // Changed from :id to :productCode
-    try {
-        const { 
-            newStockAdded, 
-            previousStock, 
-            supplierName, 
-            batchNumber, 
-            manufactureDate, 
-            expiryDate, 
-            mrp, 
-            sellerPrice 
-        } = req.body;
-
-        // Validate required fields
-        if (!newStockAdded || isNaN(parseFloat(newStockAdded))) {
-            return res.status(400).json({ 
-                success: false,
-                message: 'Invalid stock quantity' 
-            });
-        }
-
-        // Find product by code first
-        const product = await AdminProduct.findOne({ productCode: req.params.productCode });
-        
-        if (!product) {
-            return res.status(404).json({ 
-                success: false,
-                message: 'Product not found' 
-            });
-        }
-
-        // Convert to numbers
-        const addedStock = parseFloat(newStockAdded);
-        const prevStock = parseFloat(previousStock);
-
-        // Update the product
-        const updatedProduct = await AdminProduct.findByIdAndUpdate(
-            product._id,  // Use the found product's ID
-            { 
-                $inc: { stockQuantity: addedStock },
-                ...(supplierName && { supplierName }),
-                ...(batchNumber && { batchNumber }),
-                ...(manufactureDate && { manufactureDate: new Date(manufactureDate) }),
-                ...(expiryDate && { expiryDate: new Date(expiryDate) }),
-                ...(mrp && { mrp: parseFloat(mrp) }),
-                ...(sellerPrice && { sellerPrice: parseFloat(sellerPrice) })
-            },
-            { new: true }
-        );
-
-        // Create stock history record
-        const stockHistory = new StockHistory({
-            productId: product._id,
-            previousStock: prevStock,
-            addedStock: addedStock,
-            newStock: prevStock + addedStock,
-            supplierName: supplierName || 'N/A',
-            batchNumber: batchNumber || 'N/A',
-            manufactureDate: manufactureDate ? new Date(manufactureDate) : null,
-            expiryDate: expiryDate ? new Date(expiryDate) : null,
-            mrp: mrp ? parseFloat(mrp) : 0,
-            sellerPrice: sellerPrice ? parseFloat(sellerPrice) : 0,
-            updatedBy: req.user?.id || 'system'
-        });
-
-        await stockHistory.save();
-
-        res.json({
-            success: true,
-            message: 'Stock updated successfully',
-            product: updatedProduct
-        });
-
-    } catch (err) {
-        console.error('Error updating stock:', err);
-        res.status(500).json({ 
-            success: false,
-            message: 'Server error while updating stock',
-            error: err.message 
-        });
+// Add this new route for stock availability check
+router.get('/check-stock/:productCode', async (req, res) => {
+  try {
+    const { unit, quantity } = req.query;
+    const product = await AdminProduct.findOne({ productCode: req.params.productCode });
+    
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' });
     }
+
+    const stock = await StockQuantity.findOne({ productCode: req.params.productCode });
+    if (!stock) {
+      return res.json({ available: 0, required: 0, isAvailable: false });
+    }
+
+    let availableInBaseUnits = stock.availableQuantity;
+    let requiredInBaseUnits = 0;
+
+    if (unit === product.baseUnit) {
+      requiredInBaseUnits = quantity;
+    } else if (unit === product.secondaryUnit) {
+      requiredInBaseUnits = quantity * (product.conversionRate || 1);
+    } else {
+      // Handle other units if needed
+      requiredInBaseUnits = quantity;
+    }
+
+    const isAvailable = availableInBaseUnits >= requiredInBaseUnits;
+
+    res.json({
+      available: availableInBaseUnits,
+      required: requiredInBaseUnits,
+      isAvailable,
+      availableDisplay: availableInBaseUnits / (unit === product.secondaryUnit ? (product.conversionRate || 1) : 1)
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Error checking stock', details: err.message });
+  }
+});
+
+// Update the stock update endpoint
+router.put('/stock/:productCode', async (req, res) => {
+  try {
+    const { 
+      newStockAdded, 
+      previousStock, 
+      supplierName, 
+      batchNumber, 
+      manufactureDate, 
+      expiryDate, 
+      mrp, 
+      sellerPrice 
+    } = req.body;
+
+    if (!newStockAdded || isNaN(parseFloat(newStockAdded))) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid stock quantity' 
+      });
+    }
+
+    const product = await AdminProduct.findOne({ productCode: req.params.productCode });
+    if (!product) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Product not found' 
+      });
+    }
+
+    const addedStock = parseFloat(newStockAdded);
+    const prevStock = parseFloat(previousStock);
+
+    // Update product stock
+    const updatedProduct = await AdminProduct.findByIdAndUpdate(
+      product._id,
+      { 
+        $inc: { stockQuantity: addedStock, overallQuantity: addedStock * (product.conversionRate || 1) },
+        ...(supplierName && { supplierName }),
+        ...(batchNumber && { batchNumber }),
+        ...(manufactureDate && { manufactureDate: new Date(manufactureDate) }),
+        ...(expiryDate && { expiryDate: new Date(expiryDate) }),
+        ...(mrp && { mrp: parseFloat(mrp) }),
+        ...(sellerPrice && { sellerPrice: parseFloat(sellerPrice) })
+      },
+      { new: true }
+    );
+
+    // Update stock quantity
+    const stock = await StockQuantity.findOne({ productCode: req.params.productCode });
+    if (stock) {
+      stock.totalQuantity += addedStock ;
+      stock.availableQuantity += addedStock;
+      await stock.save();
+    } else {
+      const newStock = new StockQuantity({
+        productCode: product.productCode,
+        productName: product.productName,
+        totalQuantity: addedStock,
+        availableQuantity: addedStock,
+        sellingQuantity: 0
+      });
+      await newStock.save();
+    }
+
+    // Create stock history
+    const stockHistory = new StockHistory({
+      productId: product._id,
+      productCode: product.productCode,
+      productName: product.productName,
+      previousStock: prevStock,
+      addedStock: addedStock,
+      newStock: prevStock + addedStock,
+      supplierName: supplierName || 'N/A',
+      batchNumber: batchNumber || 'N/A',
+      manufactureDate: manufactureDate ? new Date(manufactureDate) : null,
+      expiryDate: expiryDate ? new Date(expiryDate) : null,
+      mrp: mrp ? parseFloat(mrp) : 0,
+      sellerPrice: sellerPrice ? parseFloat(sellerPrice) : 0,
+      updatedBy: req.user?.id || 'system'
+    });
+
+    await stockHistory.save();
+
+    res.json({
+      success: true,
+      message: 'Stock updated successfully',
+      product: updatedProduct,
+      stock: stock || newStock
+    });
+
+  } catch (err) {
+    console.error('Error updating stock:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error while updating stock',
+      error: err.message 
+    });
+  }
 });
 
 
@@ -356,8 +413,8 @@ router.get('/seller-expenses', async (req, res) => {
                 $group: {
                     _id: {
                         supplierName: "$supplierName",
-                        batchNumber: "$batchNumber",
-                        gstCategory: "$gstCategory"
+                        batchNumber: "$batchNumber"
+                        // Removed gstCategory from grouping
                     },
                     products: {
                         $push: {
@@ -392,7 +449,7 @@ router.get('/seller-expenses', async (req, res) => {
                     _id: 0,
                     supplierName: "$_id.supplierName",
                     batchNumber: "$_id.batchNumber",
-                    gstCategory: "$_id.gstCategory",
+                    // Removed gstCategory from projection as well
                     products: 1,
                     totalAmount: 1,
                     totalProfit: 1
@@ -412,6 +469,38 @@ router.get('/seller-expenses', async (req, res) => {
             stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
         });
     }
+});
+
+// Add this to your productRoutes.js
+router.get('/seller-info', async (req, res) => {
+  try {
+    const { supplierName, batchNumber } = req.query;
+    
+    if (!supplierName || !batchNumber) {
+      return res.status(400).json({ error: 'Supplier name and batch number are required' });
+    }
+
+    const product = await AdminProduct.findOne({ 
+      supplierName: new RegExp(supplierName, 'i'),
+      batchNumber: new RegExp(batchNumber, 'i')
+    }).select('supplierName batchNumber _id').lean();
+
+    if (!product) {
+      return res.status(404).json({ error: 'No products found for this supplier and batch' });
+    }
+
+    res.json({
+      sellerId: product._id,
+      supplierName: product.supplierName,
+      batchNumber: product.batchNumber
+    });
+  } catch (err) {
+    console.error('Error fetching seller info:', err);
+    res.status(500).json({ 
+      error: 'Failed to fetch seller info',
+      details: err.message
+    });
+  }
 });
 
 
