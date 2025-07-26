@@ -173,30 +173,42 @@ router.post('/', async (req, res) => {
             });
         }
 
-        if (!billData.products || billData.products.length === 0) {
+        // Check if this is an outstanding-only payment
+        const isOutstandingOnly = (!billData.products || billData.products.length === 0) && 
+                                (billData.payment?.selectedOutstandingPayment > 0);
+
+        if (!isOutstandingOnly && (!billData.products || billData.products.length === 0)) {
             await session.abortTransaction();
             session.endSession();
             return res.status(400).json({ 
                 success: false,
-                message: 'At least one product is required' 
+                message: 'At least one product is required for regular bills' 
             });
         }
 
         // Calculate totals including transport charge
         const transportCharge = parseFloat(billData.transportCharge) || 0;
-        const productSubtotal = billData.products.reduce((sum, item) => {
-            return sum + (item.basicPrice * item.quantity);
-        }, 0);
-        
-        const totalTax = billData.products.reduce((sum, item) => {
-            return sum + ((item.gstAmount + item.sgstAmount) * item.quantity);
-        }, 0);
-        
-        const currentBillTotal = productSubtotal + totalTax;
-        const grandTotal = currentBillTotal + transportCharge;
+        let productSubtotal = 0;
+        let totalTax = 0;
+        let currentBillTotal = 0;
+
+        if (!isOutstandingOnly) {
+            productSubtotal = billData.products.reduce((sum, item) => {
+                return sum + (item.basicPrice * item.quantity);
+            }, 0);
+            
+            totalTax = billData.products.reduce((sum, item) => {
+                return sum + ((item.gstAmount + item.sgstAmount) * item.quantity);
+            }, 0);
+            
+            currentBillTotal = productSubtotal + totalTax;
+        }
+
+        const grandTotal = currentBillTotal + transportCharge + (billData.payment?.selectedOutstandingPayment || 0);
 
         // Validate payment
-        if (!billData.payment || typeof billData.payment.currentBillPayment === 'undefined') {
+        if (!billData.payment || (typeof billData.payment.currentBillPayment === 'undefined' && 
+                                 typeof billData.payment.selectedOutstandingPayment === 'undefined')) {
             await session.abortTransaction();
             session.endSession();
             return res.status(400).json({ 
@@ -205,77 +217,82 @@ router.post('/', async (req, res) => {
             });
         }
 
-        const paymentAmount = parseFloat(billData.payment.currentBillPayment) || 0;
+        const paymentAmount = (parseFloat(billData.payment.currentBillPayment) || 0) + 
+                            (parseFloat(billData.payment.selectedOutstandingPayment) || 0);
+        
         const unpaidAmount = Math.max(0, grandTotal - paymentAmount);
         
         const status = unpaidAmount > 0 
             ? (paymentAmount > 0 ? 'partial' : 'unpaid') 
             : 'paid';
 
-        // Create the bill document
-        const newBill = new Bill({
-            customer: billData.customer,
-            products: billData.products.map(p => ({
-                name: p.name,
-                code: p.code,
-                price: p.price,
-                quantity: p.quantity,
-                unit: p.unit,
-                totalPrice: p.totalPrice,
-                discount: p.discount || 0,
-                basicPrice: p.basicPrice || 0,
-                gst: p.gst || 0,
-                sgst: p.sgst || 0,
-                gstAmount: p.gstAmount || 0,
-                sgstAmount: p.sgstAmount || 0,
-                hsnCode: p.hsnCode || ''
-            })),
-            productSubtotal: productSubtotal,
-            taxAmount: totalTax,
-            transportCharge: transportCharge,
-            currentBillTotal: currentBillTotal,
-            grandTotal: grandTotal,
-            paidAmount: paymentAmount,
-            unpaidAmountForThisBill: unpaidAmount,
-            status: status,
-            billNumber: billData.billNumber || `BILL-${Date.now()}`,
-            paymentMethod: billData.payment.method || 'cash',
-            transactionId: billData.payment.transactionId || '',
-            paymentDetails: {
-                currentBillPayment: billData.payment.currentBillPayment || 0,
-                outstandingPayment: billData.payment.selectedOutstandingPayment || 0
+        // Create the bill document (only if not outstanding-only)
+        let savedBill = null;
+        if (!isOutstandingOnly) {
+            const newBill = new Bill({
+                customer: billData.customer,
+                products: billData.products.map(p => ({
+                    name: p.name,
+                    code: p.code,
+                    price: p.price,
+                    quantity: p.quantity,
+                    unit: p.unit,
+                    totalPrice: p.totalPrice,
+                    discount: p.discount || 0,
+                    basicPrice: p.basicPrice || 0,
+                    gst: p.gst || 0,
+                    sgst: p.sgst || 0,
+                    gstAmount: p.gstAmount || 0,
+                    sgstAmount: p.sgstAmount || 0,
+                    hsnCode: p.hsnCode || ''
+                })),
+                productSubtotal: productSubtotal,
+                taxAmount: totalTax,
+                transportCharge: transportCharge,
+                currentBillTotal: currentBillTotal,
+                grandTotal: grandTotal,
+                paidAmount: paymentAmount,
+                unpaidAmountForThisBill: unpaidAmount,
+                status: status,
+                billNumber: billData.billNumber || `BILL-${Date.now()}`,
+                paymentMethod: billData.payment.method || 'cash',
+                transactionId: billData.payment.transactionId || '',
+                paymentDetails: {
+                    currentBillPayment: billData.payment.currentBillPayment || 0,
+                    outstandingPayment: billData.payment.selectedOutstandingPayment || 0
+                }
+            });
+
+            savedBill = await newBill.save({ session });
+
+            // Update stock quantities (only for regular bills)
+            for (const item of billData.products) {
+                const product = await AdminProduct.findOne({ 
+                    $or: [
+                        { productName: item.name },
+                        { productCode: item.code }
+                    ]
+                }).session(session);
+                
+                if (!product) {
+                    console.warn(`Product not found: ${item.name} (${item.code})`);
+                    continue;
+                }
+
+                const stock = await StockQuantity.findOne({ productCode: product.productCode }).session(session);
+                if (!stock) {
+                    console.warn(`Stock not found for product: ${product.productCode}`);
+                    continue;
+                }
+
+                const conversionRate = product.conversionRate || 1;
+                const qtyInBase = item.unit === product.baseUnit
+                    ? item.quantity
+                    : item.quantity / conversionRate;
+
+                stock.availableQuantity -= qtyInBase;
+                await stock.save({ session });
             }
-        });
-
-        const savedBill = await newBill.save({ session });
-
-        // Update stock quantities
-        for (const item of billData.products) {
-            const product = await AdminProduct.findOne({ 
-                $or: [
-                    { productName: item.name },
-                    { productCode: item.code }
-                ]
-            }).session(session);
-            
-            if (!product) {
-                console.warn(`Product not found: ${item.name} (${item.code})`);
-                continue;
-            }
-
-            const stock = await StockQuantity.findOne({ productCode: product.productCode }).session(session);
-            if (!stock) {
-                console.warn(`Stock not found for product: ${product.productCode}`);
-                continue;
-            }
-
-            const conversionRate = product.conversionRate || 1;
-            const qtyInBase = item.unit === product.baseUnit
-                ? item.quantity
-                : item.quantity / conversionRate;
-
-            stock.availableQuantity -= qtyInBase;
-            await stock.save({ session });
         }
 
         // Handle outstanding payments if any
@@ -307,7 +324,7 @@ router.post('/', async (req, res) => {
 
         res.status(201).json({
             success: true,
-            message: 'Bill created successfully',
+            message: isOutstandingOnly ? 'Outstanding payments processed successfully' : 'Bill created successfully',
             bill: savedBill
         });
 
@@ -325,7 +342,7 @@ router.post('/', async (req, res) => {
         
         res.status(500).json({ 
             success: false,
-            message: 'Failed to create bill',
+            message: 'Failed to process payment',
             error: error.message
         });
     }
