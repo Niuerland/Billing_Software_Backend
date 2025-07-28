@@ -179,11 +179,15 @@ router.post('/', async (req, res) => {
             cashier,
             billNumber,
             previousOutstandingCredit,
-            selectedUnpaidBillIds = []
+            selectedUnpaidBillIds = [],
+            transportCharge = 0,
+            productSubtotal,
+            totalGst,
+            totalSgst,
+            productTotalWithTax
         } = billData;
 
-        console.log("Received bill data:", JSON.stringify(billData, null, 2));
-
+        // Validate required fields
         if (!cashier || !cashier.cashierId || !cashier.cashierName || !cashier.counterNum) {
             await session.abortTransaction();
             session.endSession();
@@ -203,13 +207,16 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ message: 'At least one product is required for regular bills' });
         }
 
-        let productSubtotal = 0, totalTax = 0;
-        if (!isOutstandingOnly) {
-            productSubtotal = products.reduce((sum, item) => sum + (item.basicPrice * item.quantity), 0);
-            totalTax = products.reduce((sum, item) => sum + ((item.gstAmount + item.sgstAmount) * item.quantity), 0);
-        }
+        // Calculate totals if not provided
+        const calculatedProductSubtotal = productSubtotal || 
+            products.reduce((sum, item) => sum + (item.basicPrice * item.quantity), 0);
+        const calculatedTotalGst = Math.round( totalGst) || 
+            products.reduce((sum, item) => sum + (item.gstAmount * item.quantity), 0);
+        const calculatedTotalSgst =  Math.round(totalSgst) || 
+            products.reduce((sum, item) => sum + (item.sgstAmount * item.quantity), 0);
+        const calculatedProductTotalWithTax =(calculatedProductSubtotal);
 
-        const grandTotal = productSubtotal + totalTax + (parseFloat(billData.transportCharge) || 0)
+        const grandTotal = calculatedProductTotalWithTax + (parseFloat(transportCharge) || 0)
                          + (payment?.selectedOutstandingPayment || 0);
         const paymentAmount = (parseFloat(payment?.currentBillPayment) || 0) +
                               (parseFloat(payment?.selectedOutstandingPayment) || 0);
@@ -223,20 +230,23 @@ router.post('/', async (req, res) => {
                 customer,
                 cashier,
                 products,
-                productSubtotal,
-                productGst: totalTax,
-                currentBillTotal: productSubtotal + totalTax,
+                transportCharge,
+                productSubtotal: calculatedProductSubtotal,
+                totalGst: calculatedTotalGst,
+                totalSgst: calculatedTotalSgst,
+                productTotalWithTax: calculatedProductTotalWithTax,
+                currentBillTotal: calculatedProductTotalWithTax + (parseFloat(transportCharge) || 0),
                 previousOutstandingCredit,
                 grandTotal,
                 paidAmount: paymentAmount,
                 unpaidAmountForThisBill: unpaidAmount,
                 status,
                 billNumber: billNumber || `BILL-${Date.now()}`,
-                paymentMethod: payment?.method || 'cash',
-                transactionId: payment?.transactionId || '',
-                paymentDetails: {
+                payment: {
+                    method: payment?.method || 'cash',
                     currentBillPayment: payment?.currentBillPayment || 0,
-                    outstandingPayment: payment?.selectedOutstandingPayment || 0
+                    selectedOutstandingPayment: payment?.selectedOutstandingPayment || 0,
+                    transactionId: payment?.transactionId || ''
                 }
             });
 
