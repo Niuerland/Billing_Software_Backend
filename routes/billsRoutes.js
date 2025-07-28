@@ -8,69 +8,69 @@ const AdminProduct = require('../models/AdminProduct');
 const Customer = require('../models/Customer');
 
 router.get('/', async (req, res) => {
-  try {
-    const { customerId, unpaidOnly } = req.query;
+    try {
+        const { customerId, unpaidOnly } = req.query;
 
-    // Validate customerId if provided
-    if (customerId && isNaN(parseInt(customerId))) {
-      return res.status(400).json({ message: 'Customer ID must be a number' });
+        // Validate customerId if provided
+        if (customerId && isNaN(parseInt(customerId))) {
+            return res.status(400).json({ message: 'Customer ID must be a number' });
+        }
+
+        // If customerId is provided with unpaidOnly=true
+        if (customerId && unpaidOnly === 'true') {
+            const unpaidBills = await Bill.find({
+                'customer.id': parseInt(customerId),
+                unpaidAmountForThisBill: { $gt: 0 }
+            }).sort({ createdAt: 1 }).lean();
+
+            // Ensure all bills have required fields
+            const validatedBills = unpaidBills.map(bill => ({
+                ...bill,
+                customer: {
+                    id: bill.customer?.id || 0,
+                    name: bill.customer?.name || 'Unknown',
+                    contact: bill.customer?.contact || 'Not provided'
+                },
+                products: bill.products?.map(p => ({
+                    name: p.name || 'Unnamed product',
+                    price: p.price || 0,
+                    quantity: p.quantity || 0
+                })) || [],
+                total: bill.total || 0,
+                unpaidAmountForThisBill: bill.unpaidAmountForThisBill || 0
+            }));
+
+            return res.status(200).json(validatedBills);
+        }
+
+        // If no specific query parameters, return all bills
+        const bills = await Bill.find().lean();
+        res.status(200).json(bills);
+    } catch (err) {
+        console.error('Error fetching bills:', err);
+        res.status(500).json({ message: 'Failed to fetch bills', error: err.message });
     }
-
-    // If customerId is provided with unpaidOnly=true
-    if (customerId && unpaidOnly === 'true') {
-      const unpaidBills = await Bill.find({
-        'customer.id': parseInt(customerId),
-        unpaidAmountForThisBill: { $gt: 0 }
-      }).sort({ createdAt: 1 }).lean();
-
-      // Ensure all bills have required fields
-      const validatedBills = unpaidBills.map(bill => ({
-        ...bill,
-        customer: {
-          id: bill.customer?.id || 0,
-          name: bill.customer?.name || 'Unknown',
-          contact: bill.customer?.contact || 'Not provided'
-        },
-        products: bill.products?.map(p => ({
-          name: p.name || 'Unnamed product',
-          price: p.price || 0,
-          quantity: p.quantity || 0
-        })) || [],
-        total: bill.total || 0,
-        unpaidAmountForThisBill: bill.unpaidAmountForThisBill || 0
-      }));
-
-      return res.status(200).json(validatedBills);
-    }
-
-    // If no specific query parameters, return all bills
-    const bills = await Bill.find().lean();
-    res.status(200).json(bills);
-  } catch (err) {
-    console.error('Error fetching bills:', err);
-    res.status(500).json({ message: 'Failed to fetch bills', error: err.message });
-  }
 });
 
 // Keep the separate unpaid endpoint for backward compatibility
 router.get('/unpaid', async (req, res) => {
-  try {
-    const { customerId } = req.query;
-    if (!customerId) {
-      return res.status(400).json({ message: 'Customer ID is required' });
+    try {
+        const { customerId } = req.query;
+        if (!customerId) {
+            return res.status(400).json({ message: 'Customer ID is required' });
+        }
+
+        // Find bills for the customer where 'unpaidAmountForThisBill' is greater than 0
+        const unpaidBills = await Bill.find({
+            'customer.id': parseInt(customerId),
+            unpaidAmountForThisBill: { $gt: 0 }
+        }).sort({ createdAt: 1 });
+
+        res.status(200).json(unpaidBills);
+    } catch (err) {
+        console.error('Error fetching unpaid bills:', err);
+        res.status(500).json({ message: 'Failed to fetch unpaid bills' });
     }
-
-    // Find bills for the customer where 'unpaidAmountForThisBill' is greater than 0
-    const unpaidBills = await Bill.find({
-      'customer.id': parseInt(customerId),
-      unpaidAmountForThisBill: { $gt: 0 }
-    }).sort({ createdAt: 1 });
-
-    res.status(200).json(unpaidBills);
-  } catch (err) {
-    console.error('Error fetching unpaid bills:', err);
-    res.status(500).json({ message: 'Failed to fetch unpaid bills' });
-  }
 });
 
 
@@ -80,10 +80,14 @@ router.post('/settle-outstanding', async (req, res) => {
             customerId, // Needed to update customer's total outstanding credit
             paymentMethod,
             transactionId,
-            amountPaid, // Total amount paid for outstanding bills in this transaction
+            amountPaid,
+            cashier, // Total amount paid for outstanding bills in this transaction
             selectedUnpaidBillIds // Array of bill _ids to be updated
         } = req.body;
 
+        if (!cashier || !cashier.cashierId || !cashier.cashierName || !cashier.counterNum) {
+            return res.status(400).json({ message: 'Cashier details are required.' });
+        }
         // Validate required input fields
         if (!customerId || !paymentMethod || typeof amountPaid === 'undefined' || !Array.isArray(selectedUnpaidBillIds) || selectedUnpaidBillIds.length === 0) {
             return res.status(400).json({ message: 'Missing required payment details or selected bills.' });
@@ -108,6 +112,13 @@ router.post('/settle-outstanding', async (req, res) => {
 
             const unpaidAmount = bill.unpaidAmountForThisBill; // Current unpaid amount for THIS specific bill
 
+            bill.cashier = {
+                cashierId: cashier.cashierId,
+                cashierName: cashier.cashierName,
+                counterNum: cashier.counterNum,
+                contactNumber: cashier.contactNumber
+            };
+            
             if (remainingPaymentToDistribute >= unpaidAmount) {
                 // If the remaining payment covers this bill's unpaid amount, fully pay it off
                 bill.paidAmount += unpaidAmount; // Add the full unpaid amount to the bill's paid total
@@ -158,132 +169,92 @@ router.post('/settle-outstanding', async (req, res) => {
 router.post('/', async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
-    
+
     try {
         const billData = req.body;
+        const {
+            customer,
+            products = [],
+            payment,
+            cashier,
+            billNumber,
+            previousOutstandingCredit,
+            selectedUnpaidBillIds = []
+        } = billData;
+
         console.log("Received bill data:", JSON.stringify(billData, null, 2));
 
-        // Validate required fields
-        if (!billData.customer || !billData.customer.id) {
+        if (!cashier || !cashier.cashierId || !cashier.cashierName || !cashier.counterNum) {
             await session.abortTransaction();
             session.endSession();
-            return res.status(400).json({ 
-                success: false,
-                message: 'Customer information is required' 
-            });
+            return res.status(400).json({ message: 'Cashier details are required.' });
         }
 
-        // Check if this is an outstanding-only payment
-        const isOutstandingOnly = (!billData.products || billData.products.length === 0) && 
-                                (billData.payment?.selectedOutstandingPayment > 0);
-
-        if (!isOutstandingOnly && (!billData.products || billData.products.length === 0)) {
+        if (!customer || typeof customer.id === 'undefined') {
             await session.abortTransaction();
             session.endSession();
-            return res.status(400).json({ 
-                success: false,
-                message: 'At least one product is required for regular bills' 
-            });
+            return res.status(400).json({ message: 'Customer information is required' });
         }
 
-        // Calculate totals including transport charge
-        const transportCharge = parseFloat(billData.transportCharge) || 0;
-        let productSubtotal = 0;
-        let totalTax = 0;
-        let currentBillTotal = 0;
+        const isOutstandingOnly = products.length === 0 && (payment?.selectedOutstandingPayment > 0);
+        if (!isOutstandingOnly && products.length === 0) {
+            await session.abortTransaction();
+            session.endSession();
+            return res.status(400).json({ message: 'At least one product is required for regular bills' });
+        }
 
+        let productSubtotal = 0, totalTax = 0;
         if (!isOutstandingOnly) {
-            productSubtotal = billData.products.reduce((sum, item) => {
-                return sum + (item.basicPrice * item.quantity);
-            }, 0);
-            
-            totalTax = billData.products.reduce((sum, item) => {
-                return sum + ((item.gstAmount + item.sgstAmount) * item.quantity);
-            }, 0);
-            
-            currentBillTotal = productSubtotal + totalTax;
+            productSubtotal = products.reduce((sum, item) => sum + (item.basicPrice * item.quantity), 0);
+            totalTax = products.reduce((sum, item) => sum + ((item.gstAmount + item.sgstAmount) * item.quantity), 0);
         }
 
-        const grandTotal = currentBillTotal + transportCharge + (billData.payment?.selectedOutstandingPayment || 0);
+        const grandTotal = productSubtotal + totalTax + (parseFloat(billData.transportCharge) || 0)
+                         + (payment?.selectedOutstandingPayment || 0);
+        const paymentAmount = (parseFloat(payment?.currentBillPayment) || 0) +
+                              (parseFloat(payment?.selectedOutstandingPayment) || 0);
 
-        // Validate payment
-        if (!billData.payment || (typeof billData.payment.currentBillPayment === 'undefined' && 
-                                 typeof billData.payment.selectedOutstandingPayment === 'undefined')) {
-            await session.abortTransaction();
-            session.endSession();
-            return res.status(400).json({ 
-                success: false,
-                message: 'Payment information is required' 
-            });
-        }
-
-        const paymentAmount = (parseFloat(billData.payment.currentBillPayment) || 0) + 
-                            (parseFloat(billData.payment.selectedOutstandingPayment) || 0);
-        
         const unpaidAmount = Math.max(0, grandTotal - paymentAmount);
-        
-        const status = unpaidAmount > 0 
-            ? (paymentAmount > 0 ? 'partial' : 'unpaid') 
-            : 'paid';
+        const status = unpaidAmount > 0 ? (paymentAmount > 0 ? 'partial' : 'unpaid') : 'paid';
 
-        // Create the bill document (only if not outstanding-only)
         let savedBill = null;
         if (!isOutstandingOnly) {
             const newBill = new Bill({
-                customer: billData.customer,
-                products: billData.products.map(p => ({
-                    name: p.name,
-                    code: p.code,
-                    price: p.price,
-                    quantity: p.quantity,
-                    unit: p.unit,
-                    totalPrice: p.totalPrice,
-                    discount: p.discount || 0,
-                    basicPrice: p.basicPrice || 0,
-                    gst: p.gst || 0,
-                    sgst: p.sgst || 0,
-                    gstAmount: p.gstAmount || 0,
-                    sgstAmount: p.sgstAmount || 0,
-                    hsnCode: p.hsnCode || ''
-                })),
-                productSubtotal: productSubtotal,
-                taxAmount: totalTax,
-                transportCharge: transportCharge,
-                currentBillTotal: currentBillTotal,
-                grandTotal: grandTotal,
+                customer,
+                cashier,
+                products,
+                productSubtotal,
+                productGst: totalTax,
+                currentBillTotal: productSubtotal + totalTax,
+                previousOutstandingCredit,
+                grandTotal,
                 paidAmount: paymentAmount,
                 unpaidAmountForThisBill: unpaidAmount,
-                status: status,
-                billNumber: billData.billNumber || `BILL-${Date.now()}`,
-                paymentMethod: billData.payment.method || 'cash',
-                transactionId: billData.payment.transactionId || '',
+                status,
+                billNumber: billNumber || `BILL-${Date.now()}`,
+                paymentMethod: payment?.method || 'cash',
+                transactionId: payment?.transactionId || '',
                 paymentDetails: {
-                    currentBillPayment: billData.payment.currentBillPayment || 0,
-                    outstandingPayment: billData.payment.selectedOutstandingPayment || 0
+                    currentBillPayment: payment?.currentBillPayment || 0,
+                    outstandingPayment: payment?.selectedOutstandingPayment || 0
                 }
             });
 
             savedBill = await newBill.save({ session });
 
-            // Update stock quantities (only for regular bills)
-            for (const item of billData.products) {
-                const product = await AdminProduct.findOne({ 
+            // Update stock quantities
+            for (const item of products) {
+                const product = await AdminProduct.findOne({
                     $or: [
                         { productName: item.name },
                         { productCode: item.code }
                     ]
                 }).session(session);
-                
-                if (!product) {
-                    console.warn(`Product not found: ${item.name} (${item.code})`);
-                    continue;
-                }
 
-                const stock = await StockQuantity.findOne({ productCode: product.productCode }).session(session);
-                if (!stock) {
-                    console.warn(`Stock not found for product: ${product.productCode}`);
-                    continue;
-                }
+                if (!product) continue;
+
+                const stock = await StockQuantity.findOne({ productCode: item.code }).session(session);
+                if (!stock) continue;
 
                 const conversionRate = product.conversionRate || 1;
                 const qtyInBase = item.unit === product.baseUnit
@@ -295,26 +266,25 @@ router.post('/', async (req, res) => {
             }
         }
 
-        // Handle outstanding payments if any
-        if (billData.selectedUnpaidBillIds?.length > 0 && billData.payment.selectedOutstandingPayment > 0) {
+        // Settle outstanding bills if applicable
+        if (selectedUnpaidBillIds.length > 0 && payment?.selectedOutstandingPayment > 0) {
             await settleOutstandingBills(
-                billData.customer.id,
-                billData.payment.method,
-                billData.payment.transactionId,
-                billData.payment.selectedOutstandingPayment,
-                billData.selectedUnpaidBillIds,
+                customer.id,
+                payment.method,
+                payment.transactionId,
+                payment.selectedOutstandingPayment,
+                selectedUnpaidBillIds,
                 session
             );
         }
 
-        // Update customer outstanding credit
-        const customerRecord = await Customer.findOne({ id: billData.customer.id }).session(session);
+        // Update customer's total outstanding credit
+        const customerRecord = await Customer.findOne({ id: customer.id }).session(session);
         if (customerRecord) {
             const result = await Bill.aggregate([
-                { $match: { 'customer.id': parseInt(billData.customer.id), unpaidAmountForThisBill: { $gt: 0 } } },
+                { $match: { 'customer.id': parseInt(customer.id), unpaidAmountForThisBill: { $gt: 0 } } },
                 { $group: { _id: null, totalUnpaid: { $sum: '$unpaidAmountForThisBill' } } }
             ]).session(session);
-            
             customerRecord.outstandingCredit = result[0]?.totalUnpaid || 0;
             await customerRecord.save({ session });
         }
@@ -332,21 +302,15 @@ router.post('/', async (req, res) => {
         await session.abortTransaction();
         session.endSession();
         console.error('Error creating bill:', error);
-        
+
         if (error.code === 11000 && error.keyPattern?.billNumber) {
-            return res.status(409).json({ 
-                success: false,
-                message: 'Bill number already exists' 
-            });
+            return res.status(409).json({ success: false, message: 'Bill number already exists' });
         }
-        
-        res.status(500).json({ 
-            success: false,
-            message: 'Failed to process payment',
-            error: error.message
-        });
+
+        res.status(500).json({ success: false, message: 'Failed to process payment', error: error.message });
     }
 });
+
 
 async function settleOutstandingBills(customerId, paymentMethod, transactionId, amount, billIds, session) {
     let remainingAmount = amount;
