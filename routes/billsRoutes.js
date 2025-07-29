@@ -210,11 +210,12 @@ router.post('/', async (req, res) => {
         // Calculate totals if not provided
         const calculatedProductSubtotal = productSubtotal || 
             products.reduce((sum, item) => sum + (item.basicPrice * item.quantity), 0);
-        const calculatedTotalGst = Math.round( totalGst) || 
+        const calculatedTotalGst = totalGst || 
             products.reduce((sum, item) => sum + (item.gstAmount * item.quantity), 0);
-        const calculatedTotalSgst =  Math.round(totalSgst) || 
+        const calculatedTotalSgst = totalSgst || 
             products.reduce((sum, item) => sum + (item.sgstAmount * item.quantity), 0);
-        const calculatedProductTotalWithTax =(calculatedProductSubtotal);
+        const calculatedProductTotalWithTax = productTotalWithTax || 
+            (calculatedProductSubtotal + calculatedTotalGst + calculatedTotalSgst);
 
         const grandTotal = calculatedProductTotalWithTax + (parseFloat(transportCharge) || 0)
                          + (payment?.selectedOutstandingPayment || 0);
