@@ -159,5 +159,16 @@ router.get('/:id', async (req, res) => {
     }
 });
 
+// GET /api/customers/all - Get all customers
+router.get('/all', async (req, res) => {
+  try {
+    const customers = await Customer.find().lean();
+    res.status(200).json(customers);
+  } catch (err) {
+    console.error('Error fetching all customers:', err);
+    res.status(500).json({ message: 'Failed to fetch customers', error: err.message });
+  }
+});
+
 
 module.exports = router;

@@ -1,4 +1,3 @@
-// models/Bill.js
 const mongoose = require('mongoose');
 
 const billSchema = new mongoose.Schema({
@@ -19,36 +18,47 @@ const billSchema = new mongoose.Schema({
     },
     location: { type: String, trim: true }
   },
+  cashier: {
+    cashierId: { type: String, required: true },
+    cashierName: { type: String, required: true },
+    counterNum: { type: String, required: true },
+    contactNumber: { type: String }
+  },
   products: [{
     name: { type: String, required: true },
+    code: { type: String },
     price: { type: Number, required: true },
+    mrpPrice:{type:Number},
     quantity: { type: Number, required: true },
     unit: { type: String, required: true },
-    gst: { type: Number, required: true },
-    mrp: { type: Number },
-    mrpPrice: { type: Number },
-    discount: { type: Number, default: 0 }
+    totalPrice: { type: Number },
+    discount: { type: Number, default: 0 },
+    basicPrice: { type: Number },
+    gst: { type: Number },
+    sgst: { type: Number },
+    gstAmount: { type: Number },
+    sgstAmount: { type: Number },
+    hsnCode: { type: String }
   }],
-
+  transportCharge: { type: Number, default: 0 },
   productSubtotal: { type: Number, required: true },
-
-  productGst: { type: Number, required: true },
-
+  totalGst: { type: Number, required: true },
+  totalSgst: { type: Number, required: true },
+  productTotalWithTax: { type: Number, required: true },
   currentBillTotal: { type: Number, required: true },
-
   previousOutstandingCredit: { type: Number, default: 0 },
-
   grandTotal: { type: Number, required: true },
-
   paidAmount: { type: Number, default: 0 },
-
   unpaidAmountForThisBill: { type: Number, default: 0 },
-  creditPaid: { type: Boolean, default: false },
   status: { type: String, enum: ['paid', 'partial', 'unpaid'], default: 'unpaid' },
   date: { type: Date, default: Date.now },
   billNumber: { type: String, required: true, unique: true },
-  paymentMethod: { type: String },
-  transactionId: String,
+  payment: {
+    method: { type: String },
+    currentBillPayment: { type: Number },
+    selectedOutstandingPayment: { type: Number },
+    transactionId: { type: String }
+  }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Bill', billSchema);

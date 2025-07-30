@@ -4,6 +4,7 @@ const adminProductSchema = new mongoose.Schema({
   category: String,
   productName: { type: String, required: true },
   productCode: { type: String, required: true, unique: true },
+  hsnCode: {type: String,trim: true},
   brand: String,
   mrp: { type: Number, required: true },
   sellerPrice: { type: Number, required: true },  // Price at which you bought
