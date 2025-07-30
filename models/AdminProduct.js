@@ -31,6 +31,7 @@ const adminProductSchema = new mongoose.Schema({
   conversionRate: { type: Number, default: 1 },
   basePrice: Number,
   secondaryPrice: Number,
+  lowStockAlert: { type: Number, default: 0 },
   unitPrices: {
     piece: Number,
     box: Number,
