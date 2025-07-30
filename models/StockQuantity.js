@@ -6,7 +6,6 @@ const stockQuantitySchema = new mongoose.Schema({
   totalQuantity: { type: Number, default: 0 },      // In base units
   availableQuantity: { type: Number, default: 0 },  // In base units
   sellingQuantity: { type: Number, default: 0 },    // In base units
-  lowStockAlert: { type: Number, default: 0 },
   updatedAt: { type: Date, default: Date.now }
 });
 

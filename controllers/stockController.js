@@ -4,26 +4,14 @@ const StockQuantity = require('../models/StockQuantity');
 
 exports.getStockSummary = async (req, res) => {
   try {
-    // First, sync lowStockAlert values from AdminProduct to StockQuantity
-    await syncLowStockAlerts();
-
-    // Then proceed with your existing summary logic
     const adminProducts = await AdminProduct.find().lean();
     const bills = await Bill.find().lean();
     const stockQuantities = await StockQuantity.find().lean();
-
-    // Create a map of stock quantities for quick lookup
-    const stockQuantityMap = stockQuantities.reduce((acc, sq) => {
-      acc[sq.productCode] = sq;
-      return acc;
-    }, {});
 
     const summaryMap = {};
 
     // Step 1: Map all products with their initial stock quantities
     adminProducts.forEach(prod => {
-      const stockQty = stockQuantityMap[prod.productCode] || {};
-      
       summaryMap[prod.productCode] = {
         productCode: prod.productCode,
         productName: prod.productName,
@@ -31,13 +19,9 @@ exports.getStockSummary = async (req, res) => {
         baseUnit: prod.baseUnit,
         secondaryUnit: prod.secondaryUnit,
         conversionRate: prod.conversionRate || 1,
-        initialStock: prod.stockQuantity || 0,
-        currentStock: stockQty.availableQuantity !== undefined 
-          ? stockQty.availableQuantity 
-          : prod.stockQuantity || 0,
-        totalSold: 0,
-        lowStockAlert: stockQty.lowStockAlert || 0, // Get from StockQuantity
-        isLowStock: false, // Will be calculated later
+        initialStock: prod.stockQuantity || 0, // In base units
+        currentStock: prod.stockQuantity || 0, // Will be reduced by sales
+        totalSold: 0, // In base units
         lastUploaded: prod.updatedAt
       };
     });
@@ -49,7 +33,6 @@ exports.getStockSummary = async (req, res) => {
         if (product) {
           const key = product.productCode;
           if (!summaryMap[key]) {
-            const stockQty = stockQuantityMap[key] || {};
             summaryMap[key] = {
               productCode: key,
               productName: item.name,
@@ -60,19 +43,18 @@ exports.getStockSummary = async (req, res) => {
               initialStock: 0,
               currentStock: 0,
               totalSold: 0,
-              lowStockAlert: stockQty.lowStockAlert || 0,
-              isLowStock: false,
               lastUploaded: new Date()
             };
           }
           
+          // Convert sold quantity to base units based on the unit used in the bill
           let soldInBaseUnits;
           if (item.unit === product.baseUnit) {
             soldInBaseUnits = item.quantity;
           } else if (item.unit === product.secondaryUnit) {
             soldInBaseUnits = item.quantity / (product.conversionRate || 1);
           } else {
-            soldInBaseUnits = item.quantity;
+            soldInBaseUnits = item.quantity; // Default to base units
           }
           
           summaryMap[key].totalSold += soldInBaseUnits;
@@ -82,27 +64,21 @@ exports.getStockSummary = async (req, res) => {
     });
 
     // Step 3: Prepare final result with both base and display units
-    const result = Object.values(summaryMap).map(item => {
-      const isLowStock = item.currentStock <= item.lowStockAlert;
-      
-      return {
-        productCode: item.productCode,
-        productName: item.productName,
-        category: item.category,
-        baseUnit: item.baseUnit,
-        secondaryUnit: item.secondaryUnit,
-        conversionRate: item.conversionRate,
-        initialStock: item.initialStock,
-        initialStockSecondary: item.initialStock * item.conversionRate,
-        currentStock: item.currentStock,
-        currentStockSecondary: item.currentStock * item.conversionRate,
-        totalSold: item.totalSold,
-        totalSoldSecondary: item.totalSold * item.conversionRate,
-        lowStockAlert: item.lowStockAlert,
-        isLowStock,
-        lastUploaded: item.lastUploaded
-      };
-    });
+    const result = Object.values(summaryMap).map(item => ({
+      productCode: item.productCode,
+      productName: item.productName,
+      category: item.category,
+      baseUnit: item.baseUnit,
+      secondaryUnit: item.secondaryUnit,
+      conversionRate: item.conversionRate,
+      initialStock: item.initialStock, // In base units
+      initialStockSecondary: item.initialStock * item.conversionRate, // In secondary units
+      currentStock: item.currentStock, // In base units
+      currentStockSecondary: item.currentStock * item.conversionRate, // In secondary units
+      totalSold: item.totalSold, // In base units
+      totalSoldSecondary: item.totalSold * item.conversionRate, // In secondary units
+      lastUploaded: item.lastUploaded
+    }));
 
     res.json(result);
   } catch (err) {
@@ -113,28 +89,3 @@ exports.getStockSummary = async (req, res) => {
     });
   }
 };
-
-// Helper function to sync lowStockAlert values
-async function syncLowStockAlerts() {
-  try {
-    const products = await AdminProduct.find({ lowStockAlert: { $gt: 0 } });
-    const bulkOps = products.map(product => ({
-      updateOne: {
-        filter: { productCode: product.productCode },
-        update: { 
-          $set: { 
-            lowStockAlert: product.lowStockAlert,
-            isLowStock: product.stockQuantity <= product.lowStockAlert 
-          } 
-        },
-        upsert: true
-      }
-    }));
-    
-    if (bulkOps.length > 0) {
-      await StockQuantity.bulkWrite(bulkOps);
-    }
-  } catch (err) {
-    console.error('Error syncing low stock alerts:', err);
-  }
-}
