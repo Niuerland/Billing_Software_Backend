@@ -228,28 +228,56 @@ router.get('/check-stock/:productCode', async (req, res) => {
 
     const stock = await StockQuantity.findOne({ productCode: req.params.productCode });
     if (!stock) {
-      return res.json({ available: 0, required: 0, isAvailable: false });
+      return res.json({ 
+        available: 0, 
+        required: 0, 
+        isAvailable: false,
+        availableDisplay: 0
+      });
     }
 
-    let availableInBaseUnits = stock.availableQuantity;
+    // Convert everything to base units for comparison
+    const availableInBaseUnits = stock.availableQuantity;
     let requiredInBaseUnits = 0;
 
     if (unit === product.baseUnit) {
+      // If requesting in base unit, no conversion needed
       requiredInBaseUnits = quantity;
     } else if (unit === product.secondaryUnit) {
+      // If requesting in secondary unit, convert using conversion rate
       requiredInBaseUnits = quantity * (product.conversionRate || 1);
     } else {
-      // Handle other units if needed
-      requiredInBaseUnits = quantity;
+      // Handle other units (ml, gram, etc.)
+      if (unit === 'gram' && product.baseUnit === 'kg') {
+        requiredInBaseUnits = quantity / 1000;
+      } else if (unit === 'ml' && product.baseUnit === 'liter') {
+        requiredInBaseUnits = quantity / 1000;
+      } else {
+        // If no conversion is defined, assume 1:1
+        requiredInBaseUnits = quantity;
+      }
     }
 
     const isAvailable = availableInBaseUnits >= requiredInBaseUnits;
+
+    // Calculate display value (how much is available in the requested unit)
+    let availableDisplay = availableInBaseUnits;
+    
+    if (unit === product.secondaryUnit) {
+      availableDisplay = availableInBaseUnits * (product.conversionRate || 1);
+    } else if (unit === 'gram' && product.baseUnit === 'kg') {
+      availableDisplay = availableInBaseUnits * 1000;
+    } else if (unit === 'ml' && product.baseUnit === 'liter') {
+      availableDisplay = availableInBaseUnits * 1000;
+    }
 
     res.json({
       available: availableInBaseUnits,
       required: requiredInBaseUnits,
       isAvailable,
-      availableDisplay: availableInBaseUnits / (unit === product.secondaryUnit ? (product.conversionRate || 1) : 1)
+      availableDisplay,
+      baseUnit: product.baseUnit,
+      requestedUnit: unit
     });
   } catch (err) {
     res.status(500).json({ error: 'Error checking stock', details: err.message });

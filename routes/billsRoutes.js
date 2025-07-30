@@ -88,9 +88,14 @@ router.post('/settle-outstanding', async (req, res) => {
         if (!cashier || !cashier.cashierId || !cashier.cashierName || !cashier.counterNum) {
             return res.status(400).json({ message: 'Cashier details are required.' });
         }
-        // Validate required input fields
-        if (!customerId || !paymentMethod || typeof amountPaid === 'undefined' || !Array.isArray(selectedUnpaidBillIds) || selectedUnpaidBillIds.length === 0) {
-            return res.status(400).json({ message: 'Missing required payment details or selected bills.' });
+         if (!customerId || !paymentMethod || typeof amountPaid === 'undefined' || 
+            !Array.isArray(selectedUnpaidBillIds) || selectedUnpaidBillIds.length === 0 ||
+            !cashier || !cashier.cashierId || !cashier.cashierName || !cashier.counterNum) {
+            return res.status(400).json({ 
+                message: 'Missing required payment details or selected bills.',
+                requiredFields: ['customerId', 'paymentMethod', 'amountPaid', 'selectedUnpaidBillIds', 'cashier'],
+                received: Object.keys(req.body)
+            });
         }
 
         let remainingPaymentToDistribute = amountPaid; // Amount left to apply to bills
@@ -102,7 +107,7 @@ router.post('/settle-outstanding', async (req, res) => {
             unpaidAmountForThisBill: { $gt: 0 } // Ensure they are genuinely unpaid
         }).sort({ date: 1 });
 
-        if (billsToUpdate.length === 0) {
+        if (!billsToUpdate.length === 0) {
             return res.status(404).json({ message: 'No valid outstanding bills found for settlement.' });
         }
 
