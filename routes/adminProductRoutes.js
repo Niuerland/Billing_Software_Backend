@@ -502,25 +502,25 @@ router.get('/seller-expenses', async (req, res) => {
 // Add this to your productRoutes.js
 router.get('/seller-info', async (req, res) => {
   try {
-    const { supplierName, batchNumber } = req.query;
+    const { supplierName, brand } = req.query;
     
-    if (!supplierName || !batchNumber) {
-      return res.status(400).json({ error: 'Supplier name and batch number are required' });
+    if (!supplierName || !brand) {
+      return res.status(400).json({ error: 'Supplier name and brand are required' });
     }
 
     const product = await AdminProduct.findOne({ 
       supplierName: new RegExp(supplierName, 'i'),
-      batchNumber: new RegExp(batchNumber, 'i')
-    }).select('supplierName batchNumber _id').lean();
+      brand: new RegExp(brand, 'i')
+    }).select('supplierName brand _id').lean();
 
     if (!product) {
-      return res.status(404).json({ error: 'No products found for this supplier and batch' });
+      return res.status(404).json({ error: 'No products found for this supplier and brand' });
     }
 
     res.json({
       sellerId: product._id,
       supplierName: product.supplierName,
-      batchNumber: product.batchNumber
+      brand: product.brand
     });
   } catch (err) {
     console.error('Error fetching seller info:', err);

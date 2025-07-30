@@ -15,6 +15,7 @@ const adminProductSchema = new mongoose.Schema({
   gst: { type: Number, required: true },
   sgst: Number,
   totalPrice: Number,
+  perUnitPrice: Number,
   stockQuantity: { type: Number, default: 0, required: true  },
   gstCategory: { type: String, enum: ['GST', 'Non-GST'], required: true },
   overallQuantity: Number,
