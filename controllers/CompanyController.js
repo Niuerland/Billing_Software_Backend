@@ -32,8 +32,9 @@ exports.registerCompany = async (req, res) => {
       state,
       pincode: zip,
       address: businessAddress,
-      logoUrl: logo ? `/uploads/${logo.filename}` : null,
-      signatureUrl: signature ? `/uploads/${signature.filename}` : null,
+      logoUrl: logo ? `${process.env.BASE_URL}/uploads/${logo.filename}` : null,
+      signatureUrl: signature ? `${process.env.BASE_URL}/uploads/${signature.filename}` : null,
+
     });
 
     await newCompany.save();

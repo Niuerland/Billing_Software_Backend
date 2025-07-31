@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const adminProductSchema = new mongoose.Schema({
   category: String,
   productName: { type: String, required: true },
-  productCode: { type: String, required: true, unique: true },
+  productCode: { type: String, unique: true },
   hsnCode: {type: String,trim: true},
   brand: String,
   mrp: { type: Number, required: true },
@@ -15,6 +15,7 @@ const adminProductSchema = new mongoose.Schema({
   gst: { type: Number, required: true },
   sgst: Number,
   totalPrice: Number,
+  perUnitPrice: Number,
   stockQuantity: { type: Number, default: 0, required: true  },
   gstCategory: { type: String, enum: ['GST', 'Non-GST'], required: true },
   overallQuantity: Number,

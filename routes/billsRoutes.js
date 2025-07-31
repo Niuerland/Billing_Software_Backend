@@ -88,9 +88,14 @@ router.post('/settle-outstanding', async (req, res) => {
         if (!cashier || !cashier.cashierId || !cashier.cashierName || !cashier.counterNum) {
             return res.status(400).json({ message: 'Cashier details are required.' });
         }
-        // Validate required input fields
-        if (!customerId || !paymentMethod || typeof amountPaid === 'undefined' || !Array.isArray(selectedUnpaidBillIds) || selectedUnpaidBillIds.length === 0) {
-            return res.status(400).json({ message: 'Missing required payment details or selected bills.' });
+         if (!customerId || !paymentMethod || typeof amountPaid === 'undefined' || 
+            !Array.isArray(selectedUnpaidBillIds) || selectedUnpaidBillIds.length === 0 ||
+            !cashier || !cashier.cashierId || !cashier.cashierName || !cashier.counterNum) {
+            return res.status(400).json({ 
+                message: 'Missing required payment details or selected bills.',
+                requiredFields: ['customerId', 'paymentMethod', 'amountPaid', 'selectedUnpaidBillIds', 'cashier'],
+                received: Object.keys(req.body)
+            });
         }
 
         let remainingPaymentToDistribute = amountPaid; // Amount left to apply to bills
@@ -102,7 +107,7 @@ router.post('/settle-outstanding', async (req, res) => {
             unpaidAmountForThisBill: { $gt: 0 } // Ensure they are genuinely unpaid
         }).sort({ date: 1 });
 
-        if (billsToUpdate.length === 0) {
+        if (!billsToUpdate.length === 0) {
             return res.status(404).json({ message: 'No valid outstanding bills found for settlement.' });
         }
 
@@ -179,11 +184,15 @@ router.post('/', async (req, res) => {
             cashier,
             billNumber,
             previousOutstandingCredit,
-            selectedUnpaidBillIds = []
+            selectedUnpaidBillIds = [],
+            transportCharge = 0,
+            productSubtotal,
+            totalGst,
+            totalSgst,
+            productTotalWithTax
         } = billData;
 
-        console.log("Received bill data:", JSON.stringify(billData, null, 2));
-
+        // Validate required fields
         if (!cashier || !cashier.cashierId || !cashier.cashierName || !cashier.counterNum) {
             await session.abortTransaction();
             session.endSession();
@@ -203,13 +212,17 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ message: 'At least one product is required for regular bills' });
         }
 
-        let productSubtotal = 0, totalTax = 0;
-        if (!isOutstandingOnly) {
-            productSubtotal = products.reduce((sum, item) => sum + (item.basicPrice * item.quantity), 0);
-            totalTax = products.reduce((sum, item) => sum + ((item.gstAmount + item.sgstAmount) * item.quantity), 0);
-        }
+        // Calculate totals if not provided
+        const calculatedProductSubtotal = productSubtotal || 
+            products.reduce((sum, item) => sum + (item.basicPrice * item.quantity), 0);
+        const calculatedTotalGst = totalGst || 
+            products.reduce((sum, item) => sum + (item.gstAmount * item.quantity), 0);
+        const calculatedTotalSgst = totalSgst || 
+            products.reduce((sum, item) => sum + (item.sgstAmount * item.quantity), 0);
+        const calculatedProductTotalWithTax = productTotalWithTax || 
+            (calculatedProductSubtotal + calculatedTotalGst + calculatedTotalSgst);
 
-        const grandTotal = productSubtotal + totalTax + (parseFloat(billData.transportCharge) || 0)
+        const grandTotal = calculatedProductTotalWithTax + (parseFloat(transportCharge) || 0)
                          + (payment?.selectedOutstandingPayment || 0);
         const paymentAmount = (parseFloat(payment?.currentBillPayment) || 0) +
                               (parseFloat(payment?.selectedOutstandingPayment) || 0);
@@ -223,20 +236,23 @@ router.post('/', async (req, res) => {
                 customer,
                 cashier,
                 products,
-                productSubtotal,
-                productGst: totalTax,
-                currentBillTotal: productSubtotal + totalTax,
+                transportCharge,
+                productSubtotal: calculatedProductSubtotal,
+                totalGst: calculatedTotalGst,
+                totalSgst: calculatedTotalSgst,
+                productTotalWithTax: calculatedProductTotalWithTax,
+                currentBillTotal: calculatedProductTotalWithTax + (parseFloat(transportCharge) || 0),
                 previousOutstandingCredit,
                 grandTotal,
                 paidAmount: paymentAmount,
                 unpaidAmountForThisBill: unpaidAmount,
                 status,
                 billNumber: billNumber || `BILL-${Date.now()}`,
-                paymentMethod: payment?.method || 'cash',
-                transactionId: payment?.transactionId || '',
-                paymentDetails: {
+                payment: {
+                    method: payment?.method || 'cash',
                     currentBillPayment: payment?.currentBillPayment || 0,
-                    outstandingPayment: payment?.selectedOutstandingPayment || 0
+                    selectedOutstandingPayment: payment?.selectedOutstandingPayment || 0,
+                    transactionId: payment?.transactionId || ''
                 }
             });
 

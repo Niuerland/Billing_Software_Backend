@@ -7,7 +7,7 @@ const billsRoutes = require('./routes/billsRoutes');
 const adminProductRoutes = require('./routes/adminProductRoutes');
 const stockRoutes = require('./routes/stockRoutes');
 const authRoutes = require('./routes/authRoutes');
-const companyRoutes = require('./routes/companyRoutes');
+const companyRoutes = require('./routes/CompanyRoutes.js');
 const credentialRoutes = require('./routes/credentialRoutes');
 const Admin = require('./models/Admin');
 const app = express();
@@ -23,8 +23,11 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+app.get('/', (req, res) => {
+  res.send('Welcome to the Billing Software API');
+});
 // MongoDB connection
-const mongoURI = 'mongodb+srv://leanderxavier71:Leando17@leander.kkrf4yz.mongodb.net/billingdb?retryWrites=true&w=majority';
+const mongoURI = 'mongodb+srv://Dinakaran:dinakaran@mongodb.4h29m.mongodb.net/billingdb?retryWrites=true&w=majority&appName=Mongodb';
 mongoose.connect(mongoURI)
   .then(async () => {
     console.log('✅ MongoDB connected');
