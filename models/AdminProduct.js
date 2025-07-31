@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const adminProductSchema = new mongoose.Schema({
   category: String,
   productName: { type: String, required: true },
-  productCode: { type: String, required: true, unique: true },
+  productCode: { type: String, unique: true },
   hsnCode: {type: String,trim: true},
   brand: String,
   mrp: { type: Number, required: true },
