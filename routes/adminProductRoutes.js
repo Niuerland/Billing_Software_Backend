@@ -384,6 +384,49 @@ router.put('/stock/:productCode', async (req, res) => {
   }
 });
 
+router.get('/stock/:productCode', async (req, res) => {
+  try {
+    const productCode = req.params.productCode;
+
+    // Get product details
+    const product = await AdminProduct.findOne({ productCode });
+    if (!product) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Product not found' 
+      });
+    }
+
+    // Get stock quantity
+    const stock = await StockQuantity.findOne({ productCode });
+    
+    // Get stock history (optional - you might want to limit/paginate this)
+    const stockHistory = await StockHistory.find({ productCode })
+      .sort({ createdAt: -1 }) // newest first
+      .limit(50); // limit to 50 most recent entries
+
+    res.json({
+      success: true,
+      product,
+      stock: stock || {
+        productCode: product.productCode,
+        productName: product.productName,
+        totalQuantity: 0,
+        availableQuantity: 0,
+        sellingQuantity: 0
+      },
+      stockHistory
+    });
+
+  } catch (err) {
+    console.error('Error fetching stock data:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error while fetching stock data',
+      error: err.message 
+    });
+  }
+});
 
 router.get('/stock-history', async (req, res) => {
     try {

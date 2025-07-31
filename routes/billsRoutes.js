@@ -277,7 +277,9 @@ router.post('/', async (req, res) => {
                     ? item.quantity
                     : item.quantity / conversionRate;
 
+                // Update both available and selling quantities
                 stock.availableQuantity -= qtyInBase;
+                stock.sellingQuantity += qtyInBase;
                 await stock.save({ session });
             }
         }
